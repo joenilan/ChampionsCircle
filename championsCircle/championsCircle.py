@@ -25,10 +25,12 @@ class ChampionsCircle(commands.Cog):
 
         view = discord.ui.View(timeout=None)
         view.add_item(JoinButton(self))
+        view.add_item(CancelApplicationButton(self))
         
-        embed = discord.Embed(title="Champions Circle Application", description="Click the button below to apply for the Champions Circle!", color=0x00ff00)
+        embed = discord.Embed(title="Champions Circle Applications", description="Current applicants and their status.", color=0x00ff00)
         message = await ctx.send(embed=embed, view=view)
         self.champions_message_id = message.id
+        await self.update_embed(ctx.guild)
 
     @commands.command()
     @commands.has_permissions(administrator=True)
@@ -231,6 +233,20 @@ class JoinButton(discord.ui.Button):
         await self.cog.update_embed(interaction.guild)
         view = QuestionnaireView(self.cog, interaction.user)
         await interaction.followup.send("Click the button below to start the questionnaire:", view=view, ephemeral=True)
+
+class CancelApplicationButton(discord.ui.Button):
+    def __init__(self, cog):
+        super().__init__(style=discord.ButtonStyle.red, label="Cancel Application", custom_id="cancel_application")
+        self.cog = cog
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id in self.cog.active_applications:
+            self.cog.active_applications.remove(interaction.user.id)
+            self.cog.cancelled_applications.append(interaction.user.id)
+            await self.cog.update_embed(interaction.guild)
+            await interaction.response.send_message("Your Champions Circle application has been cancelled.", ephemeral=True)
+        else:
+            await interaction.response.send_message("You don't have an active Champions Circle application to cancel.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(ChampionsCircle(bot))
