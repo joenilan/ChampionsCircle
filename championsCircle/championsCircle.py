@@ -1,6 +1,7 @@
 import discord
 from redbot.core import commands
 import asyncio
+import traceback
 
 class ChampionsCircle(commands.Cog):
     def __init__(self, bot):
@@ -118,9 +119,17 @@ class JoinButton(discord.ui.Button):
             await self.cog.update_embed(interaction.guild)
             await interaction.user.send(f"Welcome to the Champions Circle! You've been given the {champions_role.name} role.")
         except discord.Forbidden:
-            await interaction.user.send("Error: The bot doesn't have permission to assign roles.")
-        except discord.HTTPException:
+            error_msg = "Error: The bot doesn't have permission to assign roles."
+            print(f"Forbidden error: {error_msg}")
+            await interaction.user.send(error_msg)
+        except discord.HTTPException as e:
+            error_msg = f"An error occurred while assigning the role: {str(e)}\n{traceback.format_exc()}"
+            print(f"HTTP Exception: {error_msg}")
             await interaction.user.send("An error occurred while assigning the role. Please try again later.")
+        except Exception as e:
+            error_msg = f"An unexpected error occurred: {str(e)}\n{traceback.format_exc()}"
+            print(f"Unexpected error: {error_msg}")
+            await interaction.user.send("An unexpected error occurred. Please contact the bot administrator.")
 
         # Acknowledge the interaction to prevent "This interaction failed" error
         await interaction.response.defer()
