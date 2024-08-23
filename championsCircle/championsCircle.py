@@ -10,6 +10,7 @@ class ChampionsCircle(commands.Cog):
         self.champions_role_id = 1276625441779613863  # Replace with the actual role ID
         self.champions_list = []
         self.champions_message_id = None  # This will store the ID of the champions list message
+        self.admin_user_id = 1234567890  # Replace with the actual ID of the admin user
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -24,13 +25,9 @@ class ChampionsCircle(commands.Cog):
         view = discord.ui.View(timeout=None)
         view.add_item(JoinButton(self))
         
-        # Create the initial embed if it doesn't exist
-        if not self.champions_message_id:
-            embed = discord.Embed(title="Champions Circle", description="A list of our esteemed champions.", color=0x00ff00)
-            message = await ctx.send("Click the button to join the Champions Circle!", embed=embed, view=view)
-            self.champions_message_id = message.id
-        else:
-            await ctx.send("Click the button to join the Champions Circle!", view=view)
+        embed = discord.Embed(title="Champions Circle Application", description="Click the button below to apply for the Champions Circle!", color=0x00ff00)
+        message = await ctx.send(embed=embed, view=view)
+        self.champions_message_id = message.id
 
     @commands.command()
     @commands.has_permissions(administrator=True)
@@ -121,39 +118,77 @@ class ChampionsCircle(commands.Cog):
 
 class JoinButton(discord.ui.Button):
     def __init__(self, cog):
-        super().__init__(style=discord.ButtonStyle.green, label="Join the Champions Circle", custom_id="join_champions")
+        super().__init__(style=discord.ButtonStyle.green, label="Apply for Champions Circle", custom_id="join_champions")
         self.cog = cog
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id in self.cog.champions_list:
-            await interaction.user.send("You are already part of the Champions Circle.")
+            await interaction.response.send_message("You are already part of the Champions Circle.", ephemeral=True)
             return
 
-        champions_role = interaction.guild.get_role(self.cog.champions_role_id)
-        if champions_role is None:
-            await interaction.user.send("Error: Champions role not found.")
+        await interaction.response.send_message("Great! Let's start your application process.", ephemeral=True)
+        view = QuestionnaireView(self.cog, interaction.user)
+        await interaction.followup.send("Click the button below to start the questionnaire:", view=view, ephemeral=True)
+
+class QuestionnaireView(discord.ui.View):
+    def __init__(self, cog, user):
+        super().__init__(timeout=600)  # 10 minutes timeout
+        self.cog = cog
+        self.user = user
+        self.answers = {}
+
+    @discord.ui.button(label="Start Questionnaire", style=discord.ButtonStyle.primary)
+    async def start_questionnaire(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("Great! I'll send you the questions in DMs. Please check your Direct Messages.", ephemeral=True)
+        await self.ask_questions()
+
+    async def ask_questions(self):
+        questions = [
+            "What's your favorite game?",
+            "How long have you been playing games?",
+            "What's your preferred gaming platform?",
+            "Do you have any experience in tournaments?"
+        ]
+
+        for i, question in enumerate(questions, 1):
+            await self.user.send(f"Question {i}: {question}")
+            
+            def check(m):
+                return m.author == self.user and isinstance(m.channel, discord.DMChannel)
+
+            try:
+                answer = await self.cog.bot.wait_for('message', check=check, timeout=300)  # 5 minutes timeout per question
+                self.answers[question] = answer.content
+            except asyncio.TimeoutError:
+                await self.user.send("You took too long to answer. The questionnaire has been cancelled.")
+                return
+
+        submit_view = SubmitView(self.cog, self.user, self.answers)
+        await self.user.send("Thank you for answering the questions. Would you like to submit your answers?", view=submit_view)
+
+class SubmitView(discord.ui.View):
+    def __init__(self, cog, user, answers):
+        super().__init__()
+        self.cog = cog
+        self.user = user
+        self.answers = answers
+
+    @discord.ui.button(label="Submit", style=discord.ButtonStyle.green)
+    async def submit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("Your answers have been submitted. Thank you!", ephemeral=True)
+        await self.send_answers_to_admin()
+
+    async def send_answers_to_admin(self):
+        admin_user = self.cog.bot.get_user(self.cog.admin_user_id)
+        if not admin_user:
+            print(f"Error: Admin user with ID {self.cog.admin_user_id} not found.")
             return
 
-        try:
-            await interaction.user.add_roles(champions_role)
-            self.cog.champions_list.append(interaction.user.id)
-            await self.cog.update_embed(interaction.guild)
-            await interaction.user.send(f"Welcome to the Champions Circle! You've been given the {champions_role.name} role.")
-        except discord.Forbidden:
-            error_msg = "Error: The bot doesn't have permission to assign roles."
-            print(f"Forbidden error: {error_msg}")
-            await interaction.user.send(error_msg)
-        except discord.HTTPException as e:
-            error_msg = f"An error occurred while assigning the role: {str(e)}"
-            print(f"HTTP Exception: {error_msg}")
-            await interaction.user.send("An error occurred while assigning the role. Please try again later.")
-        except Exception as e:
-            error_msg = f"An unexpected error occurred: {str(e)}\n{traceback.format_exc()}"
-            print(f"Unexpected error: {error_msg}")
-            await interaction.user.send("An unexpected error occurred. Please contact the bot administrator.")
+        embed = discord.Embed(title=f"New Champion Application: {self.user.name}", color=0x00ff00)
+        for question, answer in self.answers.items():
+            embed.add_field(name=question, value=answer, inline=False)
 
-        # Acknowledge the interaction to prevent "This interaction failed" error
-        await interaction.response.defer()
+        await admin_user.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(ChampionsCircle(bot))
