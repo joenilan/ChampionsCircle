@@ -1,0 +1,14 @@
+   {
+       "name": "ChampionsCircle",
+       "short": "A cog for managing a tournaments in Discord",
+       "description": "This cog allows users to join a tourney via a button, and manages a list of champions.",
+       "end_user_data_statement": "This cog stores Discord user IDs for members of the Champions Circle.",
+       "author": ["DreadedZombie"],
+       "required_cogs": {},
+       "requirements": [],
+       "tags": ["champions", "role", "button"],
+       "min_bot_version": "3.5.0",
+       "hidden": false,
+       "disabled": false,
+       "type": "COG"
+   }

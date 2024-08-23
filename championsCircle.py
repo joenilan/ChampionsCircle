@@ -5,8 +5,8 @@ from discord import app_commands
 class ChampionsCircle(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.champions_channel = 1234567890  # Replace with the actual channel ID
-        self.champions_role_id = 9876543210  # Replace with the actual role ID
+        self.champions_channel = 1276624088848404490  # Replace with the actual channel ID
+        self.champions_role_id = 1276625441779613863  # Replace with the actual role ID
         self.champions_list = []
 
     @commands.Cog.listener()
