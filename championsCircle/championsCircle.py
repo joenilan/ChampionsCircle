@@ -9,6 +9,7 @@ class ChampionsCircle(commands.Cog):
         self.champions_channel = 1276624088848404490  # Replace with the actual channel ID
         self.champions_role_id = 1276625441779613863  # Replace with the actual role ID
         self.champions_list = []
+        self.champions_message_id = None  # This will store the ID of the champions list message
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -22,7 +23,14 @@ class ChampionsCircle(commands.Cog):
 
         view = discord.ui.View(timeout=None)
         view.add_item(JoinButton(self))
-        await ctx.send("Click the button to join the Champions Circle!", view=view)
+        
+        # Create the initial embed if it doesn't exist
+        if not self.champions_message_id:
+            embed = discord.Embed(title="Champions Circle", description="A list of our esteemed champions.", color=0x00ff00)
+            message = await ctx.send("Click the button to join the Champions Circle!", embed=embed, view=view)
+            self.champions_message_id = message.id
+        else:
+            await ctx.send("Click the button to join the Champions Circle!", view=view)
 
     @commands.command()
     @commands.has_permissions(administrator=True)
@@ -95,8 +103,21 @@ class ChampionsCircle(commands.Cog):
                 embed.add_field(name=f"{champion.name}", value=f"ID: {champion.id}", inline=False)
 
         channel = self.bot.get_channel(self.champions_channel)
-        message = await channel.fetch_message(1234567890)  # Replace with the actual message ID
-        await message.edit(embed=embed)
+        if not channel:
+            print(f"Error: Channel with ID {self.champions_channel} not found.")
+            return
+
+        try:
+            # Try to fetch the existing message
+            message = await channel.fetch_message(self.champions_message_id)
+            await message.edit(embed=embed)
+        except discord.NotFound:
+            # If the message doesn't exist, send a new one and store its ID
+            message = await channel.send(embed=embed)
+            self.champions_message_id = message.id
+            # You might want to save this ID to a config or database so it persists across bot restarts
+        except discord.HTTPException as e:
+            print(f"Error updating embed: {str(e)}")
 
 class JoinButton(discord.ui.Button):
     def __init__(self, cog):
@@ -123,7 +144,7 @@ class JoinButton(discord.ui.Button):
             print(f"Forbidden error: {error_msg}")
             await interaction.user.send(error_msg)
         except discord.HTTPException as e:
-            error_msg = f"An error occurred while assigning the role: {str(e)}\n{traceback.format_exc()}"
+            error_msg = f"An error occurred while assigning the role: {str(e)}"
             print(f"HTTP Exception: {error_msg}")
             await interaction.user.send("An error occurred while assigning the role. Please try again later.")
         except Exception as e:
