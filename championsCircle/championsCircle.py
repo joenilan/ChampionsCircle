@@ -8,9 +8,10 @@ class ChampionsCircle(commands.Cog):
         self.bot = bot
         self.champions_channel = 1276624088848404490  # Replace with the actual channel ID
         self.champions_role_id = 1276625441779613863  # Replace with the actual role ID
-        self.champions_list = []
-        self.champions_message_id = None  # This will store the ID of the champions list message
-        self.admin_user_id = 131881984690487296  # Replace with the actual ID of the admin user
+        self.active_applications = []
+        self.cancelled_applications = []
+        self.champions_message_id = None
+        self.admin_user_id = 131881984690487296  # Replace with the actual admin user ID
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -46,12 +47,12 @@ class ChampionsCircle(commands.Cog):
 
     @commands.command()
     async def list_champions(self, ctx):
-        if not self.champions_list:
+        if not self.active_applications:
             await ctx.send("There are no champions yet!")
             return
 
         embed = discord.Embed(title="Champions Circle", description="Our esteemed champions:", color=0x00ff00)
-        for champion_id in self.champions_list:
+        for champion_id in self.active_applications:
             champion = ctx.guild.get_member(champion_id)
             if champion:
                 embed.add_field(name=champion.name, value=f"ID: {champion.id}", inline=False)
@@ -93,11 +94,19 @@ class ChampionsCircle(commands.Cog):
             await ctx.send("All messages have been cleared from the Champions Circle channel.", delete_after=10)
 
     async def update_embed(self, guild):
-        embed = discord.Embed(title="Champions Circle", description="A list of our esteemed champions.", color=0x00ff00)
-        for champion_id in self.champions_list:
-            champion = guild.get_member(champion_id)
-            if champion:
-                embed.add_field(name=f"{champion.name}", value=f"ID: {champion.id}", inline=False)
+        embed = discord.Embed(title="Champions Circle Applications", description="Current applicants and their status.", color=0x00ff00)
+        
+        if self.active_applications:
+            active_list = "\n".join([f"<@{user_id}>" for user_id in self.active_applications])
+            embed.add_field(name="Active Applications", value=active_list, inline=False)
+        else:
+            embed.add_field(name="Active Applications", value="No active applications", inline=False)
+        
+        if self.cancelled_applications:
+            cancelled_list = "\n".join([f"<@{user_id}>" for user_id in self.cancelled_applications])
+            embed.add_field(name="Cancelled Applications", value=cancelled_list, inline=False)
+        else:
+            embed.add_field(name="Cancelled Applications", value="No cancelled applications", inline=False)
 
         channel = self.bot.get_channel(self.champions_channel)
         if not channel:
@@ -105,40 +114,25 @@ class ChampionsCircle(commands.Cog):
             return
 
         try:
-            # Try to fetch the existing message
-            message = await channel.fetch_message(self.champions_message_id)
-            await message.edit(embed=embed)
-        except discord.NotFound:
-            # If the message doesn't exist, send a new one and store its ID
-            message = await channel.send(embed=embed)
-            self.champions_message_id = message.id
-            # You might want to save this ID to a config or database so it persists across bot restarts
+            if self.champions_message_id:
+                message = await channel.fetch_message(self.champions_message_id)
+                await message.edit(embed=embed)
+            else:
+                message = await channel.send(embed=embed)
+                self.champions_message_id = message.id
         except discord.HTTPException as e:
             print(f"Error updating embed: {str(e)}")
 
     @commands.command()
     async def cancel_application(self, ctx):
         """Cancel your Champions Circle application."""
-        if ctx.author.id in self.champions_list:
-            self.champions_list.remove(ctx.author.id)
+        if ctx.author.id in self.active_applications:
+            self.active_applications.remove(ctx.author.id)
+            self.cancelled_applications.append(ctx.author.id)
             await self.update_embed(ctx.guild)
             await ctx.send("Your Champions Circle application has been cancelled.")
         else:
             await ctx.send("You don't have an active Champions Circle application.")
-
-class JoinButton(discord.ui.Button):
-    def __init__(self, cog):
-        super().__init__(style=discord.ButtonStyle.green, label="Apply for Champions Circle", custom_id="join_champions")
-        self.cog = cog
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id in self.cog.champions_list:
-            await interaction.response.send_message("You are already part of the Champions Circle.", ephemeral=True)
-            return
-
-        await interaction.response.send_message("Great! Let's start your application process.", ephemeral=True)
-        view = QuestionnaireView(self.cog, interaction.user)
-        await interaction.followup.send("Click the button below to start the questionnaire:", view=view, ephemeral=True)
 
 class QuestionnaireView(discord.ui.View):
     def __init__(self, cog, user):
@@ -192,12 +186,20 @@ class SubmitView(discord.ui.View):
     async def submit(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("Your answers have been submitted. Thank you!", ephemeral=True)
         await self.send_answers_to_admin()
-        self.cog.champions_list.append(self.user.id)
+        if self.user.id not in self.cog.active_applications:
+            self.cog.active_applications.append(self.user.id)
+        if self.user.id in self.cog.cancelled_applications:
+            self.cog.cancelled_applications.remove(self.user.id)
         await self.cog.update_embed(interaction.guild)
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("Your application has been cancelled.", ephemeral=True)
+        if self.user.id in self.cog.active_applications:
+            self.cog.active_applications.remove(self.user.id)
+        if self.user.id not in self.cog.cancelled_applications:
+            self.cog.cancelled_applications.append(self.user.id)
+        await self.cog.update_embed(interaction.guild)
         self.stop()
 
     async def send_answers_to_admin(self):
@@ -211,6 +213,24 @@ class SubmitView(discord.ui.View):
             embed.add_field(name=question, value=answer, inline=False)
 
         await admin_user.send(embed=embed)
+
+class JoinButton(discord.ui.Button):
+    def __init__(self, cog):
+        super().__init__(style=discord.ButtonStyle.green, label="Apply for Champions Circle", custom_id="join_champions")
+        self.cog = cog
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id in self.cog.active_applications:
+            await interaction.response.send_message("You already have an active application for the Champions Circle.", ephemeral=True)
+            return
+
+        await interaction.response.send_message("Great! Let's start your application process.", ephemeral=True)
+        self.cog.active_applications.append(interaction.user.id)
+        if interaction.user.id in self.cog.cancelled_applications:
+            self.cog.cancelled_applications.remove(interaction.user.id)
+        await self.cog.update_embed(interaction.guild)
+        view = QuestionnaireView(self.cog, interaction.user)
+        await interaction.followup.send("Click the button below to start the questionnaire:", view=view, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(ChampionsCircle(bot))
