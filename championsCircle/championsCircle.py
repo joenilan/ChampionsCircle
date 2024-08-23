@@ -1,5 +1,6 @@
 import discord
-from redbot.core import commands
+from discord.ext import commands
+from discord import app_commands
 
 class ChampionsCircle(commands.Cog):
     def __init__(self, bot):
@@ -12,25 +13,20 @@ class ChampionsCircle(commands.Cog):
     async def on_ready(self):
         print(f"ChampionsCircle is ready!")
 
-    @commands.command()
-    async def setup_join_button(self, ctx):
-        if ctx.channel.id != self.champions_channel:
-            await ctx.send("This command can only be used in the Champions Circle channel.", ephemeral=True)
+    @app_commands.command()
+    async def setup_join_button(self, interaction: discord.Interaction):
+        if interaction.channel_id != self.champions_channel:
+            await interaction.response.send_message("This command can only be used in the Champions Circle channel.", ephemeral=True)
             return
 
         join_button = discord.ui.Button(label="Join the Champions Circle", style=discord.ButtonStyle.green, custom_id="join_champions")
         view = discord.ui.View()
         view.add_item(join_button)
 
-        await ctx.send("Click the button to join the Champions Circle!", view=view)
+        await interaction.response.send_message("Click the button to join the Champions Circle!", view=view)
 
-    @commands.Cog.listener()
-    async def on_interaction(self, interaction: discord.Interaction):
-        if interaction.type == discord.InteractionType.component:
-            if interaction.data["custom_id"] == "join_champions":
-                await self.join_button_callback(interaction)
-
-    async def join_button_callback(self, interaction: discord.Interaction):
+    @discord.ui.button(custom_id="join_champions")
+    async def join_button_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id in self.champions_list:
             await interaction.response.send_message("You are already part of the Champions Circle.", ephemeral=True)
             return
@@ -47,7 +43,9 @@ class ChampionsCircle(commands.Cog):
             await interaction.response.send_message(f"Welcome to the Champions Circle! You've been given the {champions_role.name} role.", ephemeral=True)
         except discord.Forbidden:
             await interaction.response.send_message("Error: I don't have permission to assign roles.", ephemeral=True)
-        except discord.HTTPException:
+        except discord.HTTPException as e:
+            error_msg = f"An error occurred while assigning the role: {str(e)}\n{traceback.format_exc()}"
+            print(error_msg)  # This will print to your bot's console
             await interaction.response.send_message("An error occurred while assigning the role. Please try again later.", ephemeral=True)
 
     async def update_embed(self, interaction: discord.Interaction):
@@ -60,5 +58,20 @@ class ChampionsCircle(commands.Cog):
         message = await channel.fetch_message(1234567890)  # Replace with the actual message ID
         await message.edit(embed=embed)
 
-async def setup(bot):
-    await bot.add_cog(ChampionsCircle(bot))
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def test_role_assign(self, ctx, member: discord.Member):
+        role = ctx.guild.get_role(self.champions_role_id)
+        if role is None:
+            await ctx.send("Error: Champions role not found.")
+            return
+        try:
+            await member.add_roles(role)
+            await ctx.send(f"Successfully assigned {role.name} to {member.name}")
+        except discord.Forbidden:
+            await ctx.send("Error: I don't have permission to assign roles.")
+        except discord.HTTPException as e:
+            await ctx.send(f"An error occurred: {str(e)}")
+
+def setup(bot):
+    bot.add_cog(ChampionsCircle(bot))
