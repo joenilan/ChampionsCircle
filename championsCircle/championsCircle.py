@@ -1,6 +1,5 @@
 import discord
-from discord.ext import commands
-from discord import app_commands
+from redbot.core import commands
 
 class ChampionsCircle(commands.Cog):
     def __init__(self, bot):
@@ -43,9 +42,7 @@ class ChampionsCircle(commands.Cog):
             await interaction.response.send_message(f"Welcome to the Champions Circle! You've been given the {champions_role.name} role.", ephemeral=True)
         except discord.Forbidden:
             await interaction.response.send_message("Error: I don't have permission to assign roles.", ephemeral=True)
-        except discord.HTTPException as e:
-            error_msg = f"An error occurred while assigning the role: {str(e)}\n{traceback.format_exc()}"
-            print(error_msg)  # This will print to your bot's console
+        except discord.HTTPException:
             await interaction.response.send_message("An error occurred while assigning the role. Please try again later.", ephemeral=True)
 
     async def update_embed(self, interaction: discord.Interaction):
