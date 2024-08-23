@@ -116,6 +116,16 @@ class ChampionsCircle(commands.Cog):
         except discord.HTTPException as e:
             print(f"Error updating embed: {str(e)}")
 
+    @commands.command()
+    async def cancel_application(self, ctx):
+        """Cancel your Champions Circle application."""
+        if ctx.author.id in self.champions_list:
+            self.champions_list.remove(ctx.author.id)
+            await self.update_embed(ctx.guild)
+            await ctx.send("Your Champions Circle application has been cancelled.")
+        else:
+            await ctx.send("You don't have an active Champions Circle application.")
+
 class JoinButton(discord.ui.Button):
     def __init__(self, cog):
         super().__init__(style=discord.ButtonStyle.green, label="Apply for Champions Circle", custom_id="join_champions")
@@ -141,6 +151,11 @@ class QuestionnaireView(discord.ui.View):
     async def start_questionnaire(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("Great! I'll send you the questions in DMs. Please check your Direct Messages.", ephemeral=True)
         await self.ask_questions()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red)
+    async def cancel_questionnaire(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("Your application has been cancelled.", ephemeral=True)
+        self.stop()
 
     async def ask_questions(self):
         questions = [
@@ -177,6 +192,13 @@ class SubmitView(discord.ui.View):
     async def submit(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("Your answers have been submitted. Thank you!", ephemeral=True)
         await self.send_answers_to_admin()
+        self.cog.champions_list.append(self.user.id)
+        await self.cog.update_embed(interaction.guild)
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("Your application has been cancelled.", ephemeral=True)
+        self.stop()
 
     async def send_answers_to_admin(self):
         admin_user = self.cog.bot.get_user(self.cog.admin_user_id)
