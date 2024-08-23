@@ -10,7 +10,7 @@ class ChampionsCircle(commands.Cog):
         self.champions_role_id = 1276625441779613863  # Replace with the actual role ID
         self.champions_list = []
         self.champions_message_id = None  # This will store the ID of the champions list message
-        self.admin_user_id = 1234567890  # Replace with the actual ID of the admin user
+        self.admin_user_id = 131881984690487296  # Replace with the actual ID of the admin user
 
     @commands.Cog.listener()
     async def on_ready(self):
