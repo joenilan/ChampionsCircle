@@ -106,17 +106,20 @@ class ChampionsCircle(commands.Cog):
     async def update_embed(self, guild):
         embed = discord.Embed(title="Champions Circle Applications", description="Current applicants and their status.", color=0x00ff00)
         
-        for status, applications in [
-            ("Active Applications", self.active_applications),
-            ("Cancelled Applications", self.cancelled_applications),
-            ("Approved Applications", self.approved_applications),
-            ("Denied Applications", self.denied_applications)
-        ]:
-            if applications:
-                app_list = "\n".join([f"<@{user_id}>" for user_id in applications])
-                embed.add_field(name=status, value=app_list, inline=False)
-            else:
-                embed.add_field(name=status, value="No applications", inline=False)
+        # Active Applications and Approved Applications side by side
+        active_list = "\n".join([f"<@{user_id}>" for user_id in self.active_applications]) if self.active_applications else "No active applications"
+        approved_list = "\n".join([f"<@{user_id}>" for user_id in self.approved_applications]) if self.approved_applications else "No approved applications"
+        embed.add_field(name="Active Applications", value=active_list, inline=True)
+        embed.add_field(name="Approved Applications", value=approved_list, inline=True)
+        
+        # Add a blank field to force the next row
+        embed.add_field(name="\u200b", value="\u200b", inline=True)
+        
+        # Denied Applications and Cancelled Applications side by side
+        denied_list = "\n".join([f"<@{user_id}>" for user_id in self.denied_applications]) if self.denied_applications else "No denied applications"
+        cancelled_list = "\n".join([f"<@{user_id}>" for user_id in self.cancelled_applications]) if self.cancelled_applications else "No cancelled applications"
+        embed.add_field(name="Denied Applications", value=denied_list, inline=True)
+        embed.add_field(name="Cancelled Applications", value=cancelled_list, inline=True)
 
         channel = self.bot.get_channel(self.champions_channel)
         if not channel:
