@@ -1,6 +1,5 @@
 import discord
-from discord.ext import commands
-from discord import app_commands
+from redbot.core import commands
 
 class ChampionsCircle(commands.Cog):
     def __init__(self, bot):
@@ -13,20 +12,25 @@ class ChampionsCircle(commands.Cog):
     async def on_ready(self):
         print(f"ChampionsCircle is ready!")
 
-    @app_commands.command()
-    async def setup_join_button(self, interaction: discord.Interaction):
-        if interaction.channel_id != self.champions_channel:
-            await interaction.response.send_message("This command can only be used in the Champions Circle channel.", ephemeral=True)
+    @commands.command()
+    async def setup_join_button(self, ctx):
+        if ctx.channel.id != self.champions_channel:
+            await ctx.send("This command can only be used in the Champions Circle channel.", ephemeral=True)
             return
 
         join_button = discord.ui.Button(label="Join the Champions Circle", style=discord.ButtonStyle.green, custom_id="join_champions")
         view = discord.ui.View()
         view.add_item(join_button)
 
-        await interaction.response.send_message("Click the button to join the Champions Circle!", view=view)
+        await ctx.send("Click the button to join the Champions Circle!", view=view)
 
-    @discord.ui.button(custom_id="join_champions")
-    async def join_button_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction):
+        if interaction.type == discord.InteractionType.component:
+            if interaction.data["custom_id"] == "join_champions":
+                await self.join_button_callback(interaction)
+
+    async def join_button_callback(self, interaction: discord.Interaction):
         if interaction.user.id in self.champions_list:
             await interaction.response.send_message("You are already part of the Champions Circle.", ephemeral=True)
             return
@@ -56,5 +60,5 @@ class ChampionsCircle(commands.Cog):
         message = await channel.fetch_message(1234567890)  # Replace with the actual message ID
         await message.edit(embed=embed)
 
-def setup(bot):
-    bot.add_cog(ChampionsCircle(bot))
+async def setup(bot):
+    await bot.add_cog(ChampionsCircle(bot))
