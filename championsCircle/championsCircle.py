@@ -1,5 +1,6 @@
 import discord
 from redbot.core import commands
+import asyncio
 
 class ChampionsCircle(commands.Cog):
     def __init__(self, bot):
@@ -50,6 +51,40 @@ class ChampionsCircle(commands.Cog):
                 embed.add_field(name=champion.name, value=f"ID: {champion.id}", inline=False)
 
         await ctx.send(embed=embed)
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def clearall(self, ctx):
+        """Clear all messages in the Champions Circle channel."""
+        if ctx.channel.id != self.champions_channel:
+            await ctx.send("This command can only be used in the Champions Circle channel.")
+            return
+
+        # Ask for confirmation
+        confirm_msg = await ctx.send("Are you sure you want to clear all messages in this channel? This action cannot be undone. Reply with 'yes' to confirm.")
+
+        def check(m):
+            return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() == 'yes'
+
+        try:
+            await self.bot.wait_for('message', check=check, timeout=30.0)
+        except asyncio.TimeoutError:
+            await ctx.send("Clearall command cancelled.")
+            return
+
+        # Clear messages
+        channel = ctx.channel
+        await ctx.send("Clearing all messages...")
+
+        try:
+            async for message in channel.history(limit=None):
+                await message.delete()
+        except discord.Forbidden:
+            await ctx.send("I don't have permission to delete messages in this channel.")
+        except discord.HTTPException:
+            await ctx.send("An error occurred while trying to delete messages.")
+        else:
+            await ctx.send("All messages have been cleared from the Champions Circle channel.", delete_after=10)
 
     async def update_embed(self, guild):
         embed = discord.Embed(title="Champions Circle", description="A list of our esteemed champions.", color=0x00ff00)
