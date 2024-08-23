@@ -1,4 +1,4 @@
-   from .championsCircle import ChampionsCircle
+from .championsCircle import ChampionsCircle
 
-   async def setup(bot):
-       await bot.add_cog(ChampionsCircle(bot))
+async def setup(bot):
+    await bot.add_cog(ChampionsCircle(bot))
