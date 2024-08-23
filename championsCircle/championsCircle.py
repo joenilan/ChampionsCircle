@@ -242,9 +242,10 @@ class AdminResponseView(discord.ui.View):
             role = interaction.guild.get_role(self.cog.champions_role_id)
             if role:
                 await user.add_roles(role)
-                await user.send(f"Congratulations! Your application for the Champions Circle has been approved. You've been given the {role.name} role.")
+                await user.send(f"Congratulations! Your application for the Champions Circle has been approved. You've been given the {role.name} role. Welcome to the Champions Circle!")
             else:
                 print(f"Error: Champions role with ID {self.cog.champions_role_id} not found.")
+                await user.send("Congratulations! Your application for the Champions Circle has been approved. However, there was an issue assigning the role. Please contact an administrator.")
         else:
             print(f"Error: User with ID {self.applicant_id} not found in the guild.")
 
@@ -256,7 +257,7 @@ class AdminResponseView(discord.ui.View):
         await interaction.response.send_message(f"Application for <@{self.applicant_id}> has been denied.")
         user = interaction.guild.get_member(self.applicant_id)
         if user:
-            await user.send("We're sorry, but your application for the Champions Circle has been denied.")
+            await user.send("We're sorry, but your application for the Champions Circle has been denied. If you have any questions about this decision, please contact an administrator.")
         else:
             print(f"Error: User with ID {self.applicant_id} not found in the guild.")
 
@@ -284,13 +285,29 @@ class CancelApplicationButton(discord.ui.Button):
         self.cog = cog
 
     async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id in self.cog.active_applications:
-            self.cog.active_applications.remove(interaction.user.id)
-            self.cog.cancelled_applications.append(interaction.user.id)
-            await self.cog.update_embed(interaction.guild)
-            await interaction.response.send_message("Your Champions Circle application has been cancelled.", ephemeral=True)
+        user_id = interaction.user.id
+        if user_id in self.cog.active_applications:
+            self.cog.active_applications.remove(user_id)
+            self.cog.cancelled_applications.append(user_id)
+            await interaction.response.send_message("Your active Champions Circle application has been cancelled.", ephemeral=True)
+        elif user_id in self.cog.approved_applications:
+            self.cog.approved_applications.remove(user_id)
+            self.cog.cancelled_applications.append(user_id)
+            # Remove the Champions role if it was assigned
+            role = interaction.guild.get_role(self.cog.champions_role_id)
+            if role and role in interaction.user.roles:
+                await interaction.user.remove_roles(role)
+            await interaction.response.send_message("Your approved Champions Circle application has been cancelled. The Champions role has been removed if it was assigned.", ephemeral=True)
+        elif user_id in self.cog.denied_applications:
+            self.cog.denied_applications.remove(user_id)
+            self.cog.cancelled_applications.append(user_id)
+            await interaction.response.send_message("Your denied Champions Circle application has been removed from the records.", ephemeral=True)
+        elif user_id in self.cog.cancelled_applications:
+            await interaction.response.send_message("You have already cancelled your Champions Circle application.", ephemeral=True)
         else:
             await interaction.response.send_message("You don't have an active Champions Circle application to cancel.", ephemeral=True)
+        
+        await self.cog.update_embed(interaction.guild)
 
 async def setup(bot):
     await bot.add_cog(ChampionsCircle(bot))
