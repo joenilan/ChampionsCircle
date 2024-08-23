@@ -10,6 +10,8 @@ class ChampionsCircle(commands.Cog):
         self.champions_role_id = 1276625441779613863  # Replace with the actual role ID
         self.active_applications = []
         self.cancelled_applications = []
+        self.approved_applications = []
+        self.denied_applications = []
         self.champions_message_id = None
         self.admin_user_id = 131881984690487296  # Replace with the actual admin user ID
 
@@ -31,6 +33,12 @@ class ChampionsCircle(commands.Cog):
         message = await ctx.send(embed=embed, view=view)
         self.champions_message_id = message.id
         await self.update_embed(ctx.guild)
+
+        # Delete the command message
+        try:
+            await ctx.message.delete()
+        except discord.HTTPException:
+            print("Failed to delete the setup command message.")
 
     @commands.command()
     @commands.has_permissions(administrator=True)
@@ -98,17 +106,17 @@ class ChampionsCircle(commands.Cog):
     async def update_embed(self, guild):
         embed = discord.Embed(title="Champions Circle Applications", description="Current applicants and their status.", color=0x00ff00)
         
-        if self.active_applications:
-            active_list = "\n".join([f"<@{user_id}>" for user_id in self.active_applications])
-            embed.add_field(name="Active Applications", value=active_list, inline=False)
-        else:
-            embed.add_field(name="Active Applications", value="No active applications", inline=False)
-        
-        if self.cancelled_applications:
-            cancelled_list = "\n".join([f"<@{user_id}>" for user_id in self.cancelled_applications])
-            embed.add_field(name="Cancelled Applications", value=cancelled_list, inline=False)
-        else:
-            embed.add_field(name="Cancelled Applications", value="No cancelled applications", inline=False)
+        for status, applications in [
+            ("Active Applications", self.active_applications),
+            ("Cancelled Applications", self.cancelled_applications),
+            ("Approved Applications", self.approved_applications),
+            ("Denied Applications", self.denied_applications)
+        ]:
+            if applications:
+                app_list = "\n".join([f"<@{user_id}>" for user_id in applications])
+                embed.add_field(name=status, value=app_list, inline=False)
+            else:
+                embed.add_field(name=status, value="No applications", inline=False)
 
         channel = self.bot.get_channel(self.champions_channel)
         if not channel:
@@ -124,6 +132,19 @@ class ChampionsCircle(commands.Cog):
                 self.champions_message_id = message.id
         except discord.HTTPException as e:
             print(f"Error updating embed: {str(e)}")
+
+    async def send_answers_to_admin(self, user, answers):
+        admin_user = self.bot.get_user(self.admin_user_id)
+        if not admin_user:
+            print(f"Error: Admin user with ID {self.admin_user_id} not found.")
+            return
+
+        embed = discord.Embed(title=f"New Champion Application: {user.name}", color=0x00ff00)
+        for question, answer in answers.items():
+            embed.add_field(name=question, value=answer, inline=False)
+
+        view = AdminResponseView(self, user.id)
+        await admin_user.send(embed=embed, view=view)
 
     @commands.command()
     async def cancel_application(self, ctx):
@@ -187,7 +208,7 @@ class SubmitView(discord.ui.View):
     @discord.ui.button(label="Submit", style=discord.ButtonStyle.green)
     async def submit(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("Your answers have been submitted. Thank you!", ephemeral=True)
-        await self.send_answers_to_admin()
+        await self.cog.send_answers_to_admin(self.user, self.answers)
         if self.user.id not in self.cog.active_applications:
             self.cog.active_applications.append(self.user.id)
         if self.user.id in self.cog.cancelled_applications:
@@ -204,17 +225,40 @@ class SubmitView(discord.ui.View):
         await self.cog.update_embed(interaction.guild)
         self.stop()
 
-    async def send_answers_to_admin(self):
-        admin_user = self.cog.bot.get_user(self.cog.admin_user_id)
-        if not admin_user:
-            print(f"Error: Admin user with ID {self.cog.admin_user_id} not found.")
-            return
+class AdminResponseView(discord.ui.View):
+    def __init__(self, cog, applicant_id):
+        super().__init__()
+        self.cog = cog
+        self.applicant_id = applicant_id
 
-        embed = discord.Embed(title=f"New Champion Application: {self.user.name}", color=0x00ff00)
-        for question, answer in self.answers.items():
-            embed.add_field(name=question, value=answer, inline=False)
+    @discord.ui.button(label="Approve", style=discord.ButtonStyle.green)
+    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.cog.active_applications.remove(self.applicant_id)
+        self.cog.approved_applications.append(self.applicant_id)
+        await self.cog.update_embed(interaction.guild)
+        await interaction.response.send_message(f"Application for <@{self.applicant_id}> has been approved.")
+        user = interaction.guild.get_member(self.applicant_id)
+        if user:
+            role = interaction.guild.get_role(self.cog.champions_role_id)
+            if role:
+                await user.add_roles(role)
+                await user.send(f"Congratulations! Your application for the Champions Circle has been approved. You've been given the {role.name} role.")
+            else:
+                print(f"Error: Champions role with ID {self.cog.champions_role_id} not found.")
+        else:
+            print(f"Error: User with ID {self.applicant_id} not found in the guild.")
 
-        await admin_user.send(embed=embed)
+    @discord.ui.button(label="Deny", style=discord.ButtonStyle.red)
+    async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.cog.active_applications.remove(self.applicant_id)
+        self.cog.denied_applications.append(self.applicant_id)
+        await self.cog.update_embed(interaction.guild)
+        await interaction.response.send_message(f"Application for <@{self.applicant_id}> has been denied.")
+        user = interaction.guild.get_member(self.applicant_id)
+        if user:
+            await user.send("We're sorry, but your application for the Champions Circle has been denied.")
+        else:
+            print(f"Error: User with ID {self.applicant_id} not found in the guild.")
 
 class JoinButton(discord.ui.Button):
     def __init__(self, cog):
