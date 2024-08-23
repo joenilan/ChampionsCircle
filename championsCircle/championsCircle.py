@@ -12,20 +12,25 @@ class ChampionsCircle(commands.Cog):
     async def on_ready(self):
         print(f"ChampionsCircle is ready!")
 
-    @app_commands.command()
-    async def setup_join_button(self, interaction: discord.Interaction):
-        if interaction.channel_id != self.champions_channel:
-            await interaction.response.send_message("This command can only be used in the Champions Circle channel.", ephemeral=True)
+    @commands.command()
+    async def setup_join_button(self, ctx):
+        if ctx.channel.id != self.champions_channel:
+            await ctx.send("This command can only be used in the Champions Circle channel.")
             return
 
         join_button = discord.ui.Button(label="Join the Champions Circle", style=discord.ButtonStyle.green, custom_id="join_champions")
         view = discord.ui.View()
         view.add_item(join_button)
 
-        await interaction.response.send_message("Click the button to join the Champions Circle!", view=view)
+        await ctx.send("Click the button to join the Champions Circle!", view=view)
 
-    @discord.ui.button(custom_id="join_champions")
-    async def join_button_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction):
+        if interaction.type == discord.InteractionType.component:
+            if interaction.data["custom_id"] == "join_champions":
+                await self.join_button_callback(interaction)
+
+    async def join_button_callback(self, interaction: discord.Interaction):
         if interaction.user.id in self.champions_list:
             await interaction.response.send_message("You are already part of the Champions Circle.", ephemeral=True)
             return
@@ -70,5 +75,19 @@ class ChampionsCircle(commands.Cog):
         except discord.HTTPException as e:
             await ctx.send(f"An error occurred: {str(e)}")
 
-def setup(bot):
-    bot.add_cog(ChampionsCircle(bot))
+    @commands.command()
+    async def list_champions(self, ctx):
+        if not self.champions_list:
+            await ctx.send("There are no champions yet!")
+            return
+
+        embed = discord.Embed(title="Champions Circle", description="Our esteemed champions:", color=0x00ff00)
+        for champion_id in self.champions_list:
+            champion = ctx.guild.get_member(champion_id)
+            if champion:
+                embed.add_field(name=champion.name, value=f"ID: {champion.id}", inline=False)
+
+        await ctx.send(embed=embed)
+
+async def setup(bot):
+    await bot.add_cog(ChampionsCircle(bot))
