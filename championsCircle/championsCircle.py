@@ -103,6 +103,61 @@ class ChampionsCircle(commands.Cog):
         else:
             await ctx.send("All messages have been cleared from the Champions Circle channel.", delete_after=10)
 
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def endtourney(self, ctx):
+        """End the current tournament, clear the channel, and reset the cog's state."""
+        if ctx.channel.id != self.champions_channel:
+            await ctx.send("This command can only be used in the Champions Circle channel.")
+            return
+
+        # Ask for confirmation
+        confirm_msg = await ctx.send("Are you sure you want to end the tournament? This will clear all messages and reset the application lists. Reply with 'yes' to confirm.")
+
+        def check(m):
+            return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() == 'yes'
+
+        try:
+            await self.bot.wait_for('message', check=check, timeout=30.0)
+        except asyncio.TimeoutError:
+            await ctx.send("Tournament end cancelled.")
+            return
+
+        # Clear messages
+        channel = ctx.channel
+        await ctx.send("Ending tournament and clearing channel...")
+
+        try:
+            async for message in channel.history(limit=None):
+                await message.delete()
+        except discord.Forbidden:
+            await ctx.send("I don't have permission to delete messages in this channel.")
+            return
+        except discord.HTTPException:
+            await ctx.send("An error occurred while trying to delete messages.")
+            return
+
+        # Reset cog state
+        self.active_applications = []
+        self.cancelled_applications = []
+        self.approved_applications = []
+        self.denied_applications = []
+        self.champions_message_id = None
+
+        # Remove Champions role from all members
+        guild = ctx.guild
+        champions_role = guild.get_role(self.champions_role_id)
+        if champions_role:
+            for member in champions_role.members:
+                try:
+                    await member.remove_roles(champions_role)
+                except discord.HTTPException:
+                    print(f"Failed to remove Champions role from {member.name}")
+        else:
+            print(f"Champions role with ID {self.champions_role_id} not found.")
+
+        await ctx.send("Tournament ended. Channel cleared and cog state reset. You can now use the setup_join_button command for a new tournament.")
+
     async def update_embed(self, guild):
         embed = discord.Embed(title="Champions Circle Applications", description="Current applicants and their status.", color=0x00ff00)
         
