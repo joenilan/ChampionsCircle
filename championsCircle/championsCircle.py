@@ -176,7 +176,7 @@ class ChampionsCircle(commands.Cog):
             self.logger.error(f"Champions role with ID {await self.config.guild(ctx.guild).champions_role_id()} not found.")
 
         # Send a temporary message that will be deleted after 10 seconds
-        temp_msg = await channel.send("Tournament ended. Channel cleared, cog state reset, and application cooldowns reset. You can now use the setup_join_button command for a new tournament.", delete_after=10)
+        temp_msg = await channel.send("Tournament ended. Channel cleared, cog state reset, and application cooldowns reset. You can now use the starttourney command for a new tournament.", delete_after=10)
 
     async def update_embed(self, guild):
         embed = discord.Embed(title="Champions Circle Applications", description="Current applicants and their status.", color=0x00ff00)
@@ -214,8 +214,20 @@ class ChampionsCircle(commands.Cog):
             return
 
         embed = discord.Embed(title=f"New Champion Application: {user.name}", color=0x00ff00)
-        for question, answer in answers.items():
-            embed.add_field(name=question, value=answer, inline=False)
+        
+        embed.add_field(name="Player Information", value="\u200b", inline=False)
+        embed.add_field(name="Epic Account ID", value=answers["Epic Account ID:"], inline=True)
+        embed.add_field(name="Rank", value=answers["Rank:"], inline=True)
+        embed.add_field(name="Primary Platform", value=answers["Primary Platform (PC, Xbox, PlayStation, Switch):"], inline=True)
+        
+        embed.add_field(name="Tournament Preferences", value="\u200b", inline=False)
+        embed.add_field(name="Preferred Region", value=answers["Preferred Region for Matches (NA East, NA West, EU, Other - please specify if Other):"], inline=True)
+        
+        embed.add_field(name="Tournament Rules & Agreement", value="\u200b", inline=False)
+        embed.add_field(name="Read Rules", value=answers["Have you read and understood the tournament rules? (Yes/No)"], inline=True)
+        embed.add_field(name="Agree to Code of Conduct", value=answers["Do you agree to follow the tournament code of conduct? (Yes/No)"], inline=True)
+        
+        embed.add_field(name="Additional Information", value=answers["Any special requests or additional notes? (e.g., match scheduling preferences, etc)"], inline=False)
 
         view = AdminResponseView(self, user.id, user.guild.id)
         await admin_user.send(embed=embed, view=view)
@@ -353,10 +365,13 @@ class QuestionnaireView(discord.ui.View):
 
     async def ask_questions(self):
         questions = [
-            "What's your favorite game?",
-            "How long have you been playing games?",
-            "What's your preferred gaming platform?",
-            "Do you have any experience in tournaments?"
+            "Epic Account ID:",
+            "Rank:",
+            "Primary Platform (PC, Xbox, PlayStation, Switch):",
+            "Preferred Region for Matches (NA East, NA West, EU, Other - please specify if Other):",
+            "Have you read and understood the tournament rules? (Yes/No)",
+            "Do you agree to follow the tournament code of conduct? (Yes/No)",
+            "Any special requests or additional notes? (e.g., match scheduling preferences, etc)"
         ]
 
         for i, question in enumerate(questions, 1):
