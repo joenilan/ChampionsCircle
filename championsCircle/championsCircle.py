@@ -21,7 +21,10 @@ class ChampionsCircle(commands.Cog):
         self.config.register_guild(**default_guild)
         self.logger = logging.getLogger("red.championsCircle")
         self.admin_user_id = 131881984690487296  # Replace with the actual admin user ID
-        self.application_cooldowns = commands.CooldownMapping.from_cooldown(1, 86400, commands.BucketType.user)
+        self.application_cooldowns = commands.CooldownMapping.from_cooldown(1, 3600, commands.BucketType.user)
+
+    def reset_cooldowns(self):
+        self.application_cooldowns = commands.CooldownMapping.from_cooldown(1, 3600, commands.BucketType.user)
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -29,7 +32,9 @@ class ChampionsCircle(commands.Cog):
         self.bot.loop.create_task(self.close_expired_applications())
 
     @commands.command()
-    async def setup_join_button(self, ctx):
+    @commands.has_permissions(administrator=True)
+    async def starttourney(self, ctx):
+        """Start a new tournament and set up the join button for Champions Circle applications."""
         if ctx.channel.id != await self.config.guild(ctx.guild).champions_channel():
             await ctx.send("This command can only be used in the Champions Circle channel.")
             return
@@ -48,6 +53,8 @@ class ChampionsCircle(commands.Cog):
             await ctx.message.delete()
         except discord.HTTPException:
             self.logger.error("Failed to delete the setup command message.")
+
+        await ctx.send("New tournament started! The join button has been set up.", delete_after=10)
 
     @commands.command()
     @commands.has_permissions(administrator=True)
@@ -153,6 +160,9 @@ class ChampionsCircle(commands.Cog):
         await self.config.guild(ctx.guild).denied_applications.set([])
         await self.config.guild(ctx.guild).champions_message_id.set(None)
 
+        # Reset cooldowns
+        self.reset_cooldowns()
+
         # Remove Champions role from all members
         guild = ctx.guild
         champions_role = guild.get_role(await self.config.guild(ctx.guild).champions_role_id())
@@ -166,7 +176,7 @@ class ChampionsCircle(commands.Cog):
             self.logger.error(f"Champions role with ID {await self.config.guild(ctx.guild).champions_role_id()} not found.")
 
         # Send a temporary message that will be deleted after 10 seconds
-        temp_msg = await channel.send("Tournament ended. Channel cleared and cog state reset. You can now use the setup_join_button command for a new tournament.", delete_after=10)
+        temp_msg = await channel.send("Tournament ended. Channel cleared, cog state reset, and application cooldowns reset. You can now use the setup_join_button command for a new tournament.", delete_after=10)
 
     async def update_embed(self, guild):
         embed = discord.Embed(title="Champions Circle Applications", description="Current applicants and their status.", color=0x00ff00)
@@ -215,7 +225,7 @@ class ChampionsCircle(commands.Cog):
         """Cancel your Champions Circle application."""
         if ctx.author.id in await self.config.guild(ctx.guild).active_applications():
             active_applications = await self.config.guild(ctx.guild).active_applications()
-            active_applications = [app for app in active_applications if app["user_id"] != ctx.author.id]
+            active_applications.remove(ctx.author.id)
             await self.config.guild(ctx.guild).active_applications.set(active_applications)
             cancelled_applications = await self.config.guild(ctx.guild).cancelled_applications()
             cancelled_applications.append(ctx.author.id)
@@ -231,7 +241,6 @@ class ChampionsCircle(commands.Cog):
         """Set the Champions Circle channel."""
         await self.config.guild(ctx.guild).champions_channel.set(channel.id)
         await ctx.send(f"Champions Circle channel set to {channel.mention}")
-        self.logger.info(f"Champions Circle channel set to {channel.id} in guild {ctx.guild.id}")
 
     @commands.command()
     @commands.admin_or_permissions(administrator=True)
@@ -246,7 +255,6 @@ class ChampionsCircle(commands.Cog):
         """Set the Champions Circle role."""
         await self.config.guild(ctx.guild).champions_role_id.set(role.id)
         await ctx.send(f"Champions Circle role set to {role.name}")
-        self.logger.info(f"Champions Circle role set to {role.id} in guild {ctx.guild.id}")
 
     async def close_expired_applications(self):
         """Close applications that have expired."""
@@ -279,7 +287,7 @@ class ChampionsCircle(commands.Cog):
             await asyncio.sleep(3600)  # Check every hour
 
     @commands.command()
-    async def championscirclehelp(self, ctx):
+    async def cchelp(self, ctx):
         """Display help information for the Champions Circle cog."""
         embed = discord.Embed(title="Champions Circle Help", description="Commands and information for the Champions Circle cog", color=0x00ff00)
         
@@ -290,13 +298,39 @@ class ChampionsCircle(commands.Cog):
         
         # Admin commands
         embed.add_field(name="Admin Commands", value="\u200b", inline=False)
-        embed.add_field(name="setup_join_button", value="Set up the join button for Champions Circle applications", inline=False)
+        embed.add_field(name="starttourney", value="Start a new tournament and set up the join button for Champions Circle applications", inline=False)
         embed.add_field(name="setchampionschannel", value="Set the Champions Circle channel", inline=False)
         embed.add_field(name="setapplicationduration", value="Set the duration for which applications remain open", inline=False)
         embed.add_field(name="setchampionsrole", value="Set the Champions Circle role", inline=False)
         embed.add_field(name="endtourney", value="End the current tournament and reset the cog", inline=False)
         embed.add_field(name="clearall", value="Clear all messages in the Champions Circle channel", inline=False)
         embed.add_field(name="test_role_assign", value="Test role assignment", inline=False)
+        embed.add_field(name="championssettings", value="Display current settings for the Champions Circle cog", inline=False)
+
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    @commands.has_permissions(administrator=True)
+    async def championssettings(self, ctx):
+        """Display current settings for the Champions Circle cog."""
+        guild = ctx.guild
+        settings = await self.config.guild(guild).all()
+
+        embed = discord.Embed(title="Champions Circle Settings", color=0x00ff00)
+        
+        champions_channel = self.bot.get_channel(settings['champions_channel'])
+        champions_role = guild.get_role(settings['champions_role_id'])
+        
+        embed.add_field(name="Champions Channel", value=champions_channel.mention if champions_channel else "Not set", inline=False)
+        embed.add_field(name="Champions Role", value=champions_role.mention if champions_role else "Not set", inline=False)
+        embed.add_field(name="Application Duration", value=f"{settings['application_duration']} days", inline=False)
+        embed.add_field(name="Active Applications", value=len(settings['active_applications']), inline=True)
+        embed.add_field(name="Approved Applications", value=len(settings['approved_applications']), inline=True)
+        embed.add_field(name="Denied Applications", value=len(settings['denied_applications']), inline=True)
+        embed.add_field(name="Cancelled Applications", value=len(settings['cancelled_applications']), inline=True)
+        
+        cooldown = self.application_cooldowns._cooldown
+        embed.add_field(name="Application Cooldown", value=f"{cooldown.per} seconds", inline=False)
 
         await ctx.send(embed=embed)
 
@@ -482,10 +516,11 @@ class JoinButton(discord.ui.Button):
         bucket = self.cog.application_cooldowns.get_bucket(interaction.message)
         retry_after = bucket.update_rate_limit()
         if retry_after:
-            await interaction.response.send_message(f"You can apply again in {retry_after:.2f} seconds.", ephemeral=True)
+            minutes, seconds = divmod(int(retry_after), 60)
+            await interaction.response.send_message(f"You can apply again in {minutes} minutes and {seconds} seconds.", ephemeral=True)
             return
 
-        if interaction.user.id in await self.cog.config.guild(interaction.guild).active_applications():
+        if interaction.user.id in [app['user_id'] for app in await self.cog.config.guild(interaction.guild).active_applications()]:
             await interaction.response.send_message("You already have an active application for the Champions Circle.", ephemeral=True)
             return
 
