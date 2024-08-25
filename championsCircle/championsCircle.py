@@ -380,6 +380,7 @@ class ChampionsCircle(commands.Cog):
             chrome_options = Options()
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-dev-shm-usage")
+            chrome_options.add_argument("--headless")  # Ensure headless mode
             self.driver = webdriver.Chrome(options=chrome_options)
 
     async def cog_unload(self):
@@ -392,15 +393,18 @@ class ChampionsCircle(commands.Cog):
         await self.setup_selenium()
 
         try:
-            self.driver.get(f"https://rocketleague.tracker.network/rocket-league/profile/epic/{epic_id}/overview")
+            url = f"https://api.tracker.gg/api/v2/rocket-league/standard/profile/epic/{epic_id}"
+            self.driver.get(url)
 
-            # Wait for the API request to complete
+            # Wait for the pre element containing the JSON to be present
             wait = WebDriverWait(self.driver, 10)
-            api_response = wait.until(EC.presence_of_element_located((By.XPATH, "//pre[contains(text(), 'standardProfiles')]")))
+            json_element = wait.until(EC.presence_of_element_located((By.TAG_NAME, "pre")))
 
-            # Extract and parse the JSON data
-            json_str = api_response.text
-            data = json.loads(json_str)
+            # Get the JSON content
+            json_content = json_element.text
+
+            # Parse the JSON
+            data = json.loads(json_content)
 
             if 'data' in data:
                 segments = data['data']['segments']
