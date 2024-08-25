@@ -407,11 +407,6 @@ class SubmitView(discord.ui.View):
                 await self.cog.config.guild(guild).cancelled_applications.set(cancelled_applications)
             await self.cog.update_embed(guild)
             
-            # Delete previous messages in DM
-            async for message in self.user.dm_channel.history(limit=None):
-                if message.author == self.cog.bot.user and message != interaction.message:
-                    await message.delete()
-
             await interaction.followup.send("Your answers have been submitted. Thank you!", ephemeral=True)
         except Exception as e:
             self.cog.logger.error(f"Error in submit button: {str(e)}")
