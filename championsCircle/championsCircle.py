@@ -401,6 +401,12 @@ class AdminResponseView(discord.ui.View):
         self.applicant_id = applicant_id
         self.guild_id = guild_id
 
+    async def remove_from_all_lists(self, guild):
+        for list_name in ['active_applications', 'approved_applications', 'denied_applications', 'cancelled_applications']:
+            current_list = await self.cog.config.guild(guild).get_raw(list_name)
+            current_list = [app for app in current_list if app != self.applicant_id]
+            await self.cog.config.guild(guild).set_raw(list_name, value=current_list)
+
     @discord.ui.button(label="Approve", style=discord.ButtonStyle.green)
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
@@ -411,13 +417,12 @@ class AdminResponseView(discord.ui.View):
                 await interaction.followup.send("Error: Unable to find the guild. Please try again or contact an administrator.")
                 return
 
-            active_applications = await self.cog.config.guild(guild).active_applications()
-            active_applications = [app for app in active_applications if app["user_id"] != self.applicant_id]
-            await self.cog.config.guild(guild).active_applications.set(active_applications)
+            await self.remove_from_all_lists(guild)
             
             approved_applications = await self.cog.config.guild(guild).approved_applications()
-            approved_applications.append(self.applicant_id)
-            await self.cog.config.guild(guild).approved_applications.set(approved_applications)
+            if self.applicant_id not in approved_applications:
+                approved_applications.append(self.applicant_id)
+                await self.cog.config.guild(guild).approved_applications.set(approved_applications)
             
             await self.cog.update_embed(guild)
             
@@ -448,13 +453,12 @@ class AdminResponseView(discord.ui.View):
                 await interaction.followup.send("Error: Unable to find the guild. Please try again or contact an administrator.")
                 return
 
-            active_applications = await self.cog.config.guild(guild).active_applications()
-            active_applications = [app for app in active_applications if app["user_id"] != self.applicant_id]
-            await self.cog.config.guild(guild).active_applications.set(active_applications)
+            await self.remove_from_all_lists(guild)
             
             denied_applications = await self.cog.config.guild(guild).denied_applications()
-            denied_applications.append(self.applicant_id)
-            await self.cog.config.guild(guild).denied_applications.set(denied_applications)
+            if self.applicant_id not in denied_applications:
+                denied_applications.append(self.applicant_id)
+                await self.cog.config.guild(guild).denied_applications.set(denied_applications)
             
             await self.cog.update_embed(guild)
             
