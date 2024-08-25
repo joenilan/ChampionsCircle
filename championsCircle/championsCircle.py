@@ -386,11 +386,16 @@ class ChampionsCircle(commands.Cog):
                         
                         for section in playlist_sections:
                             playlist_name = section.find('div', class_='playlist-name').text.strip()
-                            current_rank = section.find('div', string='Current').find_next('div', class_='value').text.strip() if section.find('div', string='Current') else 'Unranked'
-                            best_rank = section.find('div', string='Best').find_next('div', class_='value').text.strip() if section.find('div', string='Best') else 'Unranked'
+                            current_rank_div = section.find('div', string='Current')
+                            best_rank_div = section.find('div', string='Best')
                             
-                            current_ranks[playlist_name] = current_rank
-                            peak_ranks[playlist_name] = best_rank
+                            if current_rank_div:
+                                current_rank = current_rank_div.find_next('div', class_='value').text.strip()
+                                current_ranks[playlist_name] = current_rank
+                            
+                            if best_rank_div:
+                                best_rank = best_rank_div.find_next('div', class_='value').text.strip()
+                                peak_ranks[playlist_name] = best_rank
                         
                         return {
                             "peak_rating": f"{peak_rating} ({peak_playlist})",
