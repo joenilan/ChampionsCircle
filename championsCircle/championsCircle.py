@@ -3,16 +3,6 @@ from redbot.core import commands, Config
 import asyncio
 import logging
 from datetime import datetime, timedelta
-import aiohttp
-import json
-import re
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
-from pyvirtualdisplay import Display
 
 class ChampionsCircle(commands.Cog):
     def __init__(self, bot):
@@ -32,8 +22,6 @@ class ChampionsCircle(commands.Cog):
         self.logger = logging.getLogger("red.championsCircle")
         self.admin_user_id = 131881984690487296  # Replace with the actual admin user ID
         self.application_cooldowns = commands.CooldownMapping.from_cooldown(1, 3600, commands.BucketType.user)
-        self.display = None
-        self.driver = None
 
     def reset_cooldowns(self):
         self.application_cooldowns = commands.CooldownMapping.from_cooldown(1, 3600, commands.BucketType.user)
@@ -193,22 +181,10 @@ class ChampionsCircle(commands.Cog):
     async def update_embed(self, guild):
         embed = discord.Embed(title="Champions Circle Applications", description="Current applicants and their status.", color=0x00ff00)
         
-        async def format_user_with_rank(user_id):
-            user = guild.get_member(user_id)
-            if not user:
-                return f"<@{user_id}> (User left)"
-            
-            active_apps = await self.config.guild(guild).active_applications()
-            app = next((app for app in active_apps if app['user_id'] == user_id), None)
-            if app and 'rank' in app:
-                return f"{user.name} - {app['rank']}"
-            else:
-                return user.name
-
-        active_list = "\n".join([await format_user_with_rank(app['user_id']) for app in await self.config.guild(guild).active_applications()]) or "No active applications"
-        approved_list = "\n".join([await format_user_with_rank(user_id) for user_id in await self.config.guild(guild).approved_applications()]) or "No approved applications"
-        denied_list = "\n".join([await format_user_with_rank(user_id) for user_id in await self.config.guild(guild).denied_applications()]) or "No denied applications"
-        cancelled_list = "\n".join([await format_user_with_rank(user_id) for user_id in await self.config.guild(guild).cancelled_applications()]) or "No cancelled applications"
+        active_list = "\n".join([f"<@{app['user_id']}>" for app in await self.config.guild(guild).active_applications()]) or "No active applications"
+        approved_list = "\n".join([f"<@{user_id}>" for user_id in await self.config.guild(guild).approved_applications()]) or "No approved applications"
+        denied_list = "\n".join([f"<@{user_id}>" for user_id in await self.config.guild(guild).denied_applications()]) or "No denied applications"
+        cancelled_list = "\n".join([f"<@{user_id}>" for user_id in await self.config.guild(guild).cancelled_applications()]) or "No cancelled applications"
         
         embed.add_field(name="Active Applications", value=active_list, inline=True)
         embed.add_field(name="Approved Applications", value=approved_list, inline=True)
@@ -238,22 +214,8 @@ class ChampionsCircle(commands.Cog):
             return
 
         embed = discord.Embed(title=f"New Champion Application: {user.name}", color=0x00ff00)
-        
-        embed.add_field(name="Player Information", value="\u200b", inline=False)
-        embed.add_field(name="Epic Account ID", value=answers["Epic Account ID:"], inline=True)
-        embed.add_field(name="Peak Rating", value=answers.get("Peak Rating", "Not provided"), inline=True)
-        embed.add_field(name="Current Ranks", value=answers.get("Current Ranks", "Not provided"), inline=False)
-        embed.add_field(name="Peak Ranks", value=answers.get("Peak Ranks", "Not provided"), inline=False)
-        embed.add_field(name="Primary Platform", value=answers["Primary Platform (PC, Xbox, PlayStation, Switch):"], inline=True)
-        
-        embed.add_field(name="Tournament Preferences", value="\u200b", inline=False)
-        embed.add_field(name="Preferred Region", value=answers["Preferred Region for Matches (NA East, NA West, EU, Other - please specify if Other):"], inline=True)
-        
-        embed.add_field(name="Tournament Rules & Agreement", value="\u200b", inline=False)
-        embed.add_field(name="Read Rules", value=answers["Have you read and understood the tournament rules? (Yes/No)"], inline=True)
-        embed.add_field(name="Agree to Code of Conduct", value=answers["Do you agree to follow the tournament code of conduct? (Yes/No)"], inline=True)
-        
-        embed.add_field(name="Additional Information", value=answers["Any special requests or additional notes? (e.g., match scheduling preferences, etc)"], inline=False)
+        for question, answer in answers.items():
+            embed.add_field(name=question, value=answer, inline=False)
 
         view = AdminResponseView(self, user.id, user.guild.id)
         await admin_user.send(embed=embed, view=view)
@@ -372,91 +334,6 @@ class ChampionsCircle(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    async def setup_selenium(self):
-        if not self.display:
-            self.display = Display(visible=0, size=(1920, 1080))
-            self.display.start()
-
-        if not self.driver:
-            chrome_options = Options()
-            chrome_options.add_argument("--no-sandbox")
-            chrome_options.add_argument("--disable-dev-shm-usage")
-            chrome_options.add_argument("--headless")  # Ensure headless mode
-            self.driver = webdriver.Chrome(options=chrome_options)
-
-    async def cog_unload(self):
-        if self.driver:
-            self.driver.quit()
-        if self.display:
-            self.display.stop()
-
-    async def fetch_rocket_league_stats(self, epic_id: str):
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-
-        driver = webdriver.Chrome(options=chrome_options)
-        
-        try:
-            url = f"https://rocketleague.tracker.network/rocket-league/profile/epic/{epic_id}/overview"
-            driver.get(url)
-
-            # Wait for the content to load
-            WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "trn-profile-header"))
-            )
-
-            # Extract the JSON data from the page
-            script_element = driver.find_element(By.XPATH, "//script[contains(text(), 'window.__INITIAL_STATE__')]")
-            script_content = script_element.get_attribute('innerHTML')
-            
-            # Use regex to extract the JSON part
-            match = re.search(r'window\.__INITIAL_STATE__\s*=\s*({.*});', script_content, re.DOTALL)
-            if match:
-                json_str = match.group(1)
-                data = json.loads(json_str)
-
-                if 'stats' in data and 'segments' in data['stats']:
-                    segments = data['stats']['segments']
-                    overview = next((segment for segment in segments if segment['metadata']['name'] == 'Lifetime'), None)
-                    
-                    if overview:
-                        peak_rating = overview['stats']['seasonRewardLevel']['metadata']['rankName']
-                        current_ranks = {}
-                        peak_ranks = {}
-                        
-                        for segment in segments:
-                            if segment['type'] == 'playlist':
-                                playlist_name = segment['metadata']['name']
-                                current_rank = segment['stats']['tier']['metadata']['name']
-                                peak_rank = segment['stats']['rating']['metadata']['tierName']
-                                
-                                current_ranks[playlist_name] = current_rank
-                                peak_ranks[playlist_name] = peak_rank
-                        
-                        return {
-                            "peak_rating": peak_rating,
-                            "current_ranks": current_ranks,
-                            "peak_ranks": peak_ranks
-                        }
-                    else:
-                        return {"error": "Unable to find overview data"}
-                else:
-                    return {"error": "Invalid data format received"}
-            else:
-                return {"error": "Unable to extract data from the page"}
-
-        except TimeoutException:
-            return {"error": "Page load timed out"}
-        except NoSuchElementException:
-            return {"error": "Required element not found on the page"}
-        except Exception as e:
-            self.logger.error(f"Error fetching Rocket League stats: {str(e)}")
-            return {"error": f"An error occurred: {str(e)}"}
-        finally:
-            driver.quit()
-
 class QuestionnaireView(discord.ui.View):
     def __init__(self, cog, user):
         super().__init__(timeout=600)  # 10 minutes timeout
@@ -477,6 +354,7 @@ class QuestionnaireView(discord.ui.View):
     async def ask_questions(self):
         questions = [
             "Epic Account ID:",
+            "Rank:",
             "Primary Platform (PC, Xbox, PlayStation, Switch):",
             "Preferred Region for Matches (NA East, NA West, EU, Other - please specify if Other):",
             "Have you read and understood the tournament rules? (Yes/No)",
@@ -491,24 +369,8 @@ class QuestionnaireView(discord.ui.View):
                 return m.author == self.user and isinstance(m.channel, discord.DMChannel)
 
             try:
-                answer = await self.cog.bot.wait_for('message', check=check, timeout=300)
+                answer = await self.cog.bot.wait_for('message', check=check, timeout=300)  # 5 minutes timeout per question
                 self.answers[question] = answer.content
-
-                if question == "Epic Account ID:":
-                    stats = await self.cog.fetch_rocket_league_stats(answer.content)
-                    if "error" not in stats:
-                        self.answers["Peak Rating"] = stats["peak_rating"]
-                        self.answers["Current Ranks"] = ", ".join([f"{k}: {v}" for k, v in stats["current_ranks"].items()])
-                        self.answers["Peak Ranks"] = ", ".join([f"{k}: {v}" for k, v in stats["peak_ranks"].items()])
-                        await self.user.send(f"Your ranks have been automatically fetched:\nPeak Rating: {stats['peak_rating']}\nCurrent Ranks: {self.answers['Current Ranks']}\nPeak Ranks: {self.answers['Peak Ranks']}")
-                    else:
-                        await self.user.send(f"Unable to fetch ranks automatically: {stats['error']}. Please provide your current rank manually.")
-                        rank_answer = await self.cog.bot.wait_for('message', check=check, timeout=300)
-                        self.answers["Current Rank"] = rank_answer.content
-                        await self.user.send("Now, please provide your peak rank.")
-                        peak_rank_answer = await self.cog.bot.wait_for('message', check=check, timeout=300)
-                        self.answers["Peak Rank"] = peak_rank_answer.content
-
             except asyncio.TimeoutError:
                 await self.user.send("You took too long to answer. The questionnaire has been cancelled.")
                 return
@@ -537,11 +399,7 @@ class SubmitView(discord.ui.View):
             await self.cog.send_answers_to_admin(self.user, self.answers)
             active_applications = await self.cog.config.guild(guild).active_applications()
             if self.user.id not in [app["user_id"] for app in active_applications]:
-                active_applications.append({
-                    "user_id": self.user.id, 
-                    "timestamp": datetime.now().timestamp(),
-                    "rank": self.answers.get("Rank:", "Unknown")  # Add rank to the stored data
-                })
+                active_applications.append({"user_id": self.user.id, "timestamp": datetime.now().timestamp()})
                 await self.cog.config.guild(guild).active_applications.set(active_applications)
             cancelled_applications = await self.cog.config.guild(guild).cancelled_applications()
             if self.user.id in cancelled_applications:
@@ -549,11 +407,6 @@ class SubmitView(discord.ui.View):
                 await self.cog.config.guild(guild).cancelled_applications.set(cancelled_applications)
             await self.cog.update_embed(guild)
             
-            # Delete previous messages in DM
-            async for message in self.user.dm_channel.history(limit=None):
-                if message.author == self.cog.bot.user and message != interaction.message:
-                    await message.delete()
-
             await interaction.followup.send("Your answers have been submitted. Thank you!", ephemeral=True)
         except Exception as e:
             self.cog.logger.error(f"Error in submit button: {str(e)}")
