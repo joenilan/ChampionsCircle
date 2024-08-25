@@ -4,7 +4,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 import aiohttp
-from bs4 import BeautifulSoup
+import json
 
 class ChampionsCircle(commands.Cog):
     def __init__(self, bot):
@@ -363,49 +363,47 @@ class ChampionsCircle(commands.Cog):
         await ctx.send(embed=embed)
 
     async def fetch_rocket_league_stats(self, epic_id: str):
-        url = f"https://rocketleague.tracker.network/rocket-league/profile/epic/{epic_id}/overview"
+        url = f"https://api.tracker.gg/api/v2/rocket-league/standard/profile/epic/{epic_id}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        
         async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
+            async with session.get(url, headers=headers) as response:
                 if response.status == 200:
-                    soup = BeautifulSoup(await response.text(), 'html.parser')
+                    data = await response.json()
                     
-                    # Find the Peak Rating section
-                    peak_rating_div = soup.find('div', string='Peak Rating')
-                    if peak_rating_div:
-                        peak_rating_section = peak_rating_div.find_parent('div', class_='card')
+                    if 'data' in data:
+                        segments = data['data']['segments']
+                        overview = next((segment for segment in segments if segment['type'] == 'overview'), None)
                         
-                        # Extract peak rating
-                        peak_rating = peak_rating_section.find('div', class_='value').text.strip()
-                        peak_playlist = peak_rating_section.find('div', class_='subtext').text.strip()
-                        
-                        # Find all playlist sections
-                        playlist_sections = soup.find_all('div', class_='playlist')
-                        
-                        current_ranks = {}
-                        peak_ranks = {}
-                        
-                        for section in playlist_sections:
-                            playlist_name = section.find('div', class_='playlist-name').text.strip()
-                            current_rank_div = section.find('div', string='Current')
-                            best_rank_div = section.find('div', string='Best')
+                        if overview:
+                            peak_rating = overview['stats']['rating']['value']
+                            peak_playlist = "Overall"
                             
-                            if current_rank_div:
-                                current_rank = current_rank_div.find_next('div', class_='value').text.strip()
-                                current_ranks[playlist_name] = current_rank
+                            current_ranks = {}
+                            peak_ranks = {}
                             
-                            if best_rank_div:
-                                best_rank = best_rank_div.find_next('div', class_='value').text.strip()
-                                peak_ranks[playlist_name] = best_rank
-                        
-                        return {
-                            "peak_rating": f"{peak_rating} ({peak_playlist})",
-                            "current_ranks": current_ranks,
-                            "peak_ranks": peak_ranks
-                        }
+                            for segment in segments:
+                                if segment['type'] == 'playlist':
+                                    playlist_name = segment['metadata']['name']
+                                    current_rank = segment['stats']['rating']['value']
+                                    peak_rank = segment['stats']['seasonRewardLevel']['metadata']['rankName']
+                                    
+                                    current_ranks[playlist_name] = current_rank
+                                    peak_ranks[playlist_name] = peak_rank
+                            
+                            return {
+                                "peak_rating": f"{peak_rating} ({peak_playlist})",
+                                "current_ranks": current_ranks,
+                                "peak_ranks": peak_ranks
+                            }
+                        else:
+                            return {"error": "Unable to find overview data"}
                     else:
-                        return {"error": "Unable to find rank information"}
+                        return {"error": "Invalid data format received"}
                 else:
-                    return {"error": "Unable to fetch rank information"}
+                    return {"error": f"Unable to fetch rank information. Status code: {response.status}"}
 
 class QuestionnaireView(discord.ui.View):
     def __init__(self, cog, user):
@@ -452,7 +450,7 @@ class QuestionnaireView(discord.ui.View):
                         self.answers["Peak Ranks"] = ", ".join([f"{k}: {v}" for k, v in stats["peak_ranks"].items()])
                         await self.user.send(f"Your ranks have been automatically fetched:\nPeak Rating: {stats['peak_rating']}\nCurrent Ranks: {self.answers['Current Ranks']}\nPeak Ranks: {self.answers['Peak Ranks']}")
                     else:
-                        await self.user.send("Unable to fetch ranks automatically. Please provide your current rank manually.")
+                        await self.user.send(f"Unable to fetch ranks automatically: {stats['error']}. Please provide your current rank manually.")
                         rank_answer = await self.cog.bot.wait_for('message', check=check, timeout=300)
                         self.answers["Current Rank"] = rank_answer.content
                         await self.user.send("Now, please provide your peak rank.")
