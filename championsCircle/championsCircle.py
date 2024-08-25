@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timedelta
 import aiohttp
 import json
+import re
 
 class ChampionsCircle(commands.Cog):
     def __init__(self, bot):
@@ -365,7 +366,13 @@ class ChampionsCircle(commands.Cog):
     async def fetch_rocket_league_stats(self, epic_id: str):
         url = f"https://api.tracker.gg/api/v2/rocket-league/standard/profile/epic/{epic_id}"
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": f"https://rocketleague.tracker.network/rocket-league/profile/epic/{epic_id}/overview",
+            "Origin": "https://rocketleague.tracker.network",
+            "DNT": "1",
+            "Connection": "keep-alive",
         }
         
         async with aiohttp.ClientSession() as session:
@@ -402,6 +409,56 @@ class ChampionsCircle(commands.Cog):
                             return {"error": "Unable to find overview data"}
                     else:
                         return {"error": "Invalid data format received"}
+                elif response.status == 403:
+                    # If we get a 403, try to scrape the page directly
+                    return await self.scrape_rocket_league_stats(epic_id)
+                else:
+                    return {"error": f"Unable to fetch rank information. Status code: {response.status}"}
+
+    async def scrape_rocket_league_stats(self, epic_id: str):
+        url = f"https://rocketleague.tracker.network/rocket-league/profile/epic/{epic_id}/overview"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    html = await response.text()
+                    
+                    # Try to extract the data from the JavaScript on the page
+                    match = re.search(r'window.__INITIAL_STATE__\s*=\s*({.*?});', html, re.DOTALL)
+                    if match:
+                        data = json.loads(match.group(1))
+                        profile_data = data.get('stats', {}).get('standardProfiles', {}).get(epic_id, {})
+                        
+                        if profile_data:
+                            segments = profile_data.get('segments', [])
+                            overview = next((segment for segment in segments if segment['type'] == 'overview'), None)
+                            
+                            if overview:
+                                peak_rating = overview['stats']['rating']['value']
+                                peak_playlist = "Overall"
+                                
+                                current_ranks = {}
+                                peak_ranks = {}
+                                
+                                for segment in segments:
+                                    if segment['type'] == 'playlist':
+                                        playlist_name = segment['metadata']['name']
+                                        current_rank = segment['stats']['rating']['value']
+                                        peak_rank = segment['stats']['seasonRewardLevel']['metadata']['rankName']
+                                        
+                                        current_ranks[playlist_name] = current_rank
+                                        peak_ranks[playlist_name] = peak_rank
+                                
+                                return {
+                                    "peak_rating": f"{peak_rating} ({peak_playlist})",
+                                    "current_ranks": current_ranks,
+                                    "peak_ranks": peak_ranks
+                                }
+                
+                    return {"error": "Unable to extract rank information from the page"}
                 else:
                     return {"error": f"Unable to fetch rank information. Status code: {response.status}"}
 
