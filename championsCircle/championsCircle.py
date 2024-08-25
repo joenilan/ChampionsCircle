@@ -214,20 +214,8 @@ class ChampionsCircle(commands.Cog):
             return
 
         embed = discord.Embed(title=f"New Champion Application: {user.name}", color=0x00ff00)
-        
-        embed.add_field(name="Player Information", value="\u200b", inline=False)
-        embed.add_field(name="Epic Account ID", value=answers["Epic Account ID:"], inline=True)
-        embed.add_field(name="Rank", value=answers["Rank:"], inline=True)
-        embed.add_field(name="Primary Platform", value=answers["Primary Platform (PC, Xbox, PlayStation, Switch):"], inline=True)
-        
-        embed.add_field(name="Tournament Preferences", value="\u200b", inline=False)
-        embed.add_field(name="Preferred Region", value=answers["Preferred Region for Matches (NA East, NA West, EU, Other - please specify if Other):"], inline=True)
-        
-        embed.add_field(name="Tournament Rules & Agreement", value="\u200b", inline=False)
-        embed.add_field(name="Read Rules", value=answers["Have you read and understood the tournament rules? (Yes/No)"], inline=True)
-        embed.add_field(name="Agree to Code of Conduct", value=answers["Do you agree to follow the tournament code of conduct? (Yes/No)"], inline=True)
-        
-        embed.add_field(name="Additional Information", value=answers["Any special requests or additional notes? (e.g., match scheduling preferences, etc)"], inline=False)
+        for question, answer in answers.items():
+            embed.add_field(name=question, value=answer, inline=False)
 
         view = AdminResponseView(self, user.id, user.guild.id)
         await admin_user.send(embed=embed, view=view)
@@ -419,6 +407,11 @@ class SubmitView(discord.ui.View):
                 await self.cog.config.guild(guild).cancelled_applications.set(cancelled_applications)
             await self.cog.update_embed(guild)
             
+            # Delete previous messages in DM
+            async for message in self.user.dm_channel.history(limit=None):
+                if message.author == self.cog.bot.user and message != interaction.message:
+                    await message.delete()
+
             await interaction.followup.send("Your answers have been submitted. Thank you!", ephemeral=True)
         except Exception as e:
             self.cog.logger.error(f"Error in submit button: {str(e)}")
