@@ -11,6 +11,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from pyvirtualdisplay import Display
 
 class ChampionsCircle(commands.Cog):
@@ -402,7 +403,7 @@ class ChampionsCircle(commands.Cog):
             driver.get(url)
 
             # Wait for the content to load
-            WebDriverWait(driver, 10).until(
+            WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located((By.CLASS_NAME, "trn-profile-header"))
             )
 
