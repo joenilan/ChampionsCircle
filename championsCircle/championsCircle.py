@@ -6,6 +6,12 @@ from datetime import datetime, timedelta
 import aiohttp
 import json
 import re
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from pyvirtualdisplay import Display
 
 class ChampionsCircle(commands.Cog):
     def __init__(self, bot):
@@ -25,6 +31,8 @@ class ChampionsCircle(commands.Cog):
         self.logger = logging.getLogger("red.championsCircle")
         self.admin_user_id = 131881984690487296  # Replace with the actual admin user ID
         self.application_cooldowns = commands.CooldownMapping.from_cooldown(1, 3600, commands.BucketType.user)
+        self.display = None
+        self.driver = None
 
     def reset_cooldowns(self):
         self.application_cooldowns = commands.CooldownMapping.from_cooldown(1, 3600, commands.BucketType.user)
@@ -363,104 +371,69 @@ class ChampionsCircle(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    async def fetch_rocket_league_stats(self, epic_id: str):
-        url = f"https://api.tracker.gg/api/v2/rocket-league/standard/profile/epic/{epic_id}"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Referer": f"https://rocketleague.tracker.network/rocket-league/profile/epic/{epic_id}/overview",
-            "Origin": "https://rocketleague.tracker.network",
-            "DNT": "1",
-            "Connection": "keep-alive",
-        }
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    
-                    if 'data' in data:
-                        segments = data['data']['segments']
-                        overview = next((segment for segment in segments if segment['type'] == 'overview'), None)
-                        
-                        if overview:
-                            peak_rating = overview['stats']['rating']['value']
-                            peak_playlist = "Overall"
-                            
-                            current_ranks = {}
-                            peak_ranks = {}
-                            
-                            for segment in segments:
-                                if segment['type'] == 'playlist':
-                                    playlist_name = segment['metadata']['name']
-                                    current_rank = segment['stats']['rating']['value']
-                                    peak_rank = segment['stats']['seasonRewardLevel']['metadata']['rankName']
-                                    
-                                    current_ranks[playlist_name] = current_rank
-                                    peak_ranks[playlist_name] = peak_rank
-                            
-                            return {
-                                "peak_rating": f"{peak_rating} ({peak_playlist})",
-                                "current_ranks": current_ranks,
-                                "peak_ranks": peak_ranks
-                            }
-                        else:
-                            return {"error": "Unable to find overview data"}
-                    else:
-                        return {"error": "Invalid data format received"}
-                elif response.status == 403:
-                    # If we get a 403, try to scrape the page directly
-                    return await self.scrape_rocket_league_stats(epic_id)
-                else:
-                    return {"error": f"Unable to fetch rank information. Status code: {response.status}"}
+    async def setup_selenium(self):
+        if not self.display:
+            self.display = Display(visible=0, size=(1920, 1080))
+            self.display.start()
 
-    async def scrape_rocket_league_stats(self, epic_id: str):
-        url = f"https://rocketleague.tracker.network/rocket-league/profile/epic/{epic_id}/overview"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        }
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as response:
-                if response.status == 200:
-                    html = await response.text()
-                    
-                    # Try to extract the data from the JavaScript on the page
-                    match = re.search(r'window.__INITIAL_STATE__\s*=\s*({.*?});', html, re.DOTALL)
-                    if match:
-                        data = json.loads(match.group(1))
-                        profile_data = data.get('stats', {}).get('standardProfiles', {}).get(epic_id, {})
-                        
-                        if profile_data:
-                            segments = profile_data.get('segments', [])
-                            overview = next((segment for segment in segments if segment['type'] == 'overview'), None)
-                            
-                            if overview:
-                                peak_rating = overview['stats']['rating']['value']
-                                peak_playlist = "Overall"
-                                
-                                current_ranks = {}
-                                peak_ranks = {}
-                                
-                                for segment in segments:
-                                    if segment['type'] == 'playlist':
-                                        playlist_name = segment['metadata']['name']
-                                        current_rank = segment['stats']['rating']['value']
-                                        peak_rank = segment['stats']['seasonRewardLevel']['metadata']['rankName']
-                                        
-                                        current_ranks[playlist_name] = current_rank
-                                        peak_ranks[playlist_name] = peak_rank
-                                
-                                return {
-                                    "peak_rating": f"{peak_rating} ({peak_playlist})",
-                                    "current_ranks": current_ranks,
-                                    "peak_ranks": peak_ranks
-                                }
+        if not self.driver:
+            chrome_options = Options()
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+            self.driver = webdriver.Chrome(options=chrome_options)
+
+    async def cog_unload(self):
+        if self.driver:
+            self.driver.quit()
+        if self.display:
+            self.display.stop()
+
+    async def fetch_rocket_league_stats(self, epic_id: str):
+        await self.setup_selenium()
+
+        try:
+            self.driver.get(f"https://rocketleague.tracker.network/rocket-league/profile/epic/{epic_id}/overview")
+
+            # Wait for the API request to complete
+            wait = WebDriverWait(self.driver, 10)
+            api_response = wait.until(EC.presence_of_element_located((By.XPATH, "//pre[contains(text(), 'standardProfiles')]")))
+
+            # Extract and parse the JSON data
+            json_str = api_response.text
+            data = json.loads(json_str)
+
+            if 'data' in data:
+                segments = data['data']['segments']
+                overview = next((segment for segment in segments if segment['type'] == 'overview'), None)
                 
-                    return {"error": "Unable to extract rank information from the page"}
+                if overview:
+                    peak_rating = overview['stats']['rating']['value']
+                    peak_playlist = "Overall"
+                    
+                    current_ranks = {}
+                    peak_ranks = {}
+                    
+                    for segment in segments:
+                        if segment['type'] == 'playlist':
+                            playlist_name = segment['metadata']['name']
+                            current_rank = segment['stats']['rating']['value']
+                            peak_rank = segment['stats']['seasonRewardLevel']['metadata']['rankName']
+                            
+                            current_ranks[playlist_name] = current_rank
+                            peak_ranks[playlist_name] = peak_rank
+                    
+                    return {
+                        "peak_rating": f"{peak_rating} ({peak_playlist})",
+                        "current_ranks": current_ranks,
+                        "peak_ranks": peak_ranks
+                    }
                 else:
-                    return {"error": f"Unable to fetch rank information. Status code: {response.status}"}
+                    return {"error": "Unable to find overview data"}
+            else:
+                return {"error": "Invalid data format received"}
+        except Exception as e:
+            self.logger.error(f"Error fetching Rocket League stats: {str(e)}")
+            return {"error": f"An error occurred: {str(e)}"}
 
 class QuestionnaireView(discord.ui.View):
     def __init__(self, cog, user):
