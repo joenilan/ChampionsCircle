@@ -286,12 +286,22 @@ class ChampionsCircle(commands.Cog):
     async def championscirclehelp(self, ctx):
         """Display help information for the Champions Circle cog."""
         embed = discord.Embed(title="Champions Circle Help", description="Commands and information for the Champions Circle cog", color=0x00ff00)
-        embed.add_field(name="setup_join_button", value="Set up the join button for Champions Circle applications", inline=False)
+        
+        # User commands
+        embed.add_field(name="User Commands", value="\u200b", inline=False)
         embed.add_field(name="cancel_application", value="Cancel your active Champions Circle application", inline=False)
-        embed.add_field(name="setchampionschannel", value="Set the Champions Circle channel (Admin only)", inline=False)
-        embed.add_field(name="setapplicationduration", value="Set the duration for which applications remain open (Admin only)", inline=False)
-        embed.add_field(name="setchampionsrole", value="Set the Champions Circle role (Admin only)", inline=False)
-        embed.add_field(name="endtourney", value="End the current tournament and reset the cog (Admin only)", inline=False)
+        embed.add_field(name="list_champions", value="List current champions", inline=False)
+        
+        # Admin commands
+        embed.add_field(name="Admin Commands", value="\u200b", inline=False)
+        embed.add_field(name="setup_join_button", value="Set up the join button for Champions Circle applications", inline=False)
+        embed.add_field(name="setchampionschannel", value="Set the Champions Circle channel", inline=False)
+        embed.add_field(name="setapplicationduration", value="Set the duration for which applications remain open", inline=False)
+        embed.add_field(name="setchampionsrole", value="Set the Champions Circle role", inline=False)
+        embed.add_field(name="endtourney", value="End the current tournament and reset the cog", inline=False)
+        embed.add_field(name="clearall", value="Clear all messages in the Champions Circle channel", inline=False)
+        embed.add_field(name="test_role_assign", value="Test role assignment", inline=False)
+
         await ctx.send(embed=embed)
 
 class QuestionnaireView(discord.ui.View):
@@ -378,41 +388,63 @@ class AdminResponseView(discord.ui.View):
 
     @discord.ui.button(label="Approve", style=discord.ButtonStyle.green)
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
-        active_applications = await self.cog.config.guild(interaction.guild).active_applications()
-        active_applications.remove(self.applicant_id)
-        await self.cog.config.guild(interaction.guild).active_applications.set(active_applications)
-        approved_applications = await self.cog.config.guild(interaction.guild).approved_applications()
-        approved_applications.append(self.applicant_id)
-        await self.cog.config.guild(interaction.guild).approved_applications.set(approved_applications)
-        await self.cog.update_embed(interaction.guild)
-        await interaction.response.send_message(f"Application for <@{self.applicant_id}> has been approved.")
-        user = interaction.guild.get_member(self.applicant_id)
-        if user:
-            role = interaction.guild.get_role(await self.cog.config.guild(interaction.guild).champions_role_id())
-            if role:
-                await user.add_roles(role)
-                await user.send(f"Congratulations! Your application for the Champions Circle has been approved. You've been given the {role.name} role. Welcome to the Champions Circle!")
+        try:
+            await interaction.response.defer()
+            
+            guild = interaction.guild
+            active_applications = await self.cog.config.guild(guild).active_applications()
+            active_applications = [app for app in active_applications if app["user_id"] != self.applicant_id]
+            await self.cog.config.guild(guild).active_applications.set(active_applications)
+            
+            approved_applications = await self.cog.config.guild(guild).approved_applications()
+            approved_applications.append(self.applicant_id)
+            await self.cog.config.guild(guild).approved_applications.set(approved_applications)
+            
+            await self.cog.update_embed(guild)
+            
+            await interaction.followup.send(f"Application for <@{self.applicant_id}> has been approved.")
+            
+            user = guild.get_member(self.applicant_id)
+            if user:
+                role = guild.get_role(await self.cog.config.guild(guild).champions_role_id())
+                if role:
+                    await user.add_roles(role)
+                    await user.send(f"Congratulations! Your application for the Champions Circle has been approved. You've been given the {role.name} role. Welcome to the Champions Circle!")
+                else:
+                    self.cog.logger.error(f"Error: Champions role with ID {await self.cog.config.guild(guild).champions_role_id()} not found.")
+                    await user.send("Congratulations! Your application for the Champions Circle has been approved. However, there was an issue assigning the role. Please contact an administrator.")
             else:
-                self.cog.logger.error(f"Error: Champions role with ID {await self.cog.config.guild(interaction.guild).champions_role_id()} not found.")
-                await user.send("Congratulations! Your application for the Champions Circle has been approved. However, there was an issue assigning the role. Please contact an administrator.")
-        else:
-            self.cog.logger.error(f"Error: User with ID {self.applicant_id} not found in the guild.")
+                self.cog.logger.error(f"Error: User with ID {self.applicant_id} not found in the guild.")
+        except Exception as e:
+            self.cog.logger.error(f"Error in approve button: {str(e)}")
+            await interaction.followup.send("An error occurred while processing the approval. Please try again or contact the bot administrator.")
 
     @discord.ui.button(label="Deny", style=discord.ButtonStyle.red)
     async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
-        active_applications = await self.cog.config.guild(interaction.guild).active_applications()
-        active_applications.remove(self.applicant_id)
-        await self.cog.config.guild(interaction.guild).active_applications.set(active_applications)
-        denied_applications = await self.cog.config.guild(interaction.guild).denied_applications()
-        denied_applications.append(self.applicant_id)
-        await self.cog.config.guild(interaction.guild).denied_applications.set(denied_applications)
-        await self.cog.update_embed(interaction.guild)
-        await interaction.response.send_message(f"Application for <@{self.applicant_id}> has been denied.")
-        user = interaction.guild.get_member(self.applicant_id)
-        if user:
-            await user.send("We're sorry, but your application for the Champions Circle has been denied. If you have any questions about this decision, please contact an administrator.")
-        else:
-            self.cog.logger.error(f"Error: User with ID {self.applicant_id} not found in the guild.")
+        try:
+            await interaction.response.defer()
+            
+            guild = interaction.guild
+            active_applications = await self.cog.config.guild(guild).active_applications()
+            active_applications = [app for app in active_applications if app["user_id"] != self.applicant_id]
+            await self.cog.config.guild(guild).active_applications.set(active_applications)
+            
+            denied_applications = await self.cog.config.guild(guild).denied_applications()
+            denied_applications.append(self.applicant_id)
+            await self.cog.config.guild(guild).denied_applications.set(denied_applications)
+            
+            await self.cog.update_embed(guild)
+            
+            await interaction.followup.send(f"Application for <@{self.applicant_id}> has been denied.")
+            
+            user = guild.get_member(self.applicant_id)
+            if user:
+                await user.send("We're sorry, but your application for the Champions Circle has been denied. If you have any questions about this decision, please contact an administrator.")
+            else:
+                self.cog.logger.error(f"Error: User with ID {self.applicant_id} not found in the guild.")
+        except Exception as e:
+            self.cog.logger.error(f"Error in deny button: {str(e)}")
+            await interaction.followup.send("An error occurred while processing the denial. Please try again or contact the bot administrator.")
 
 class JoinButton(discord.ui.Button):
     def __init__(self, cog):
