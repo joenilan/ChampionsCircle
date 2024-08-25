@@ -3,6 +3,8 @@ from redbot.core import commands, Config
 import asyncio
 import logging
 from datetime import datetime, timedelta
+import aiohttp
+from bs4 import BeautifulSoup
 
 class ChampionsCircle(commands.Cog):
     def __init__(self, bot):
@@ -181,10 +183,22 @@ class ChampionsCircle(commands.Cog):
     async def update_embed(self, guild):
         embed = discord.Embed(title="Champions Circle Applications", description="Current applicants and their status.", color=0x00ff00)
         
-        active_list = "\n".join([f"<@{app['user_id']}>" for app in await self.config.guild(guild).active_applications()]) or "No active applications"
-        approved_list = "\n".join([f"<@{user_id}>" for user_id in await self.config.guild(guild).approved_applications()]) or "No approved applications"
-        denied_list = "\n".join([f"<@{user_id}>" for user_id in await self.config.guild(guild).denied_applications()]) or "No denied applications"
-        cancelled_list = "\n".join([f"<@{user_id}>" for user_id in await self.config.guild(guild).cancelled_applications()]) or "No cancelled applications"
+        async def format_user_with_rank(user_id):
+            user = guild.get_member(user_id)
+            if not user:
+                return f"<@{user_id}> (User left)"
+            
+            active_apps = await self.config.guild(guild).active_applications()
+            app = next((app for app in active_apps if app['user_id'] == user_id), None)
+            if app and 'rank' in app:
+                return f"{user.name} - {app['rank']}"
+            else:
+                return user.name
+
+        active_list = "\n".join([await format_user_with_rank(app['user_id']) for app in await self.config.guild(guild).active_applications()]) or "No active applications"
+        approved_list = "\n".join([await format_user_with_rank(user_id) for user_id in await self.config.guild(guild).approved_applications()]) or "No approved applications"
+        denied_list = "\n".join([await format_user_with_rank(user_id) for user_id in await self.config.guild(guild).denied_applications()]) or "No denied applications"
+        cancelled_list = "\n".join([await format_user_with_rank(user_id) for user_id in await self.config.guild(guild).cancelled_applications()]) or "No cancelled applications"
         
         embed.add_field(name="Active Applications", value=active_list, inline=True)
         embed.add_field(name="Approved Applications", value=approved_list, inline=True)
@@ -214,8 +228,20 @@ class ChampionsCircle(commands.Cog):
             return
 
         embed = discord.Embed(title=f"New Champion Application: {user.name}", color=0x00ff00)
-        for question, answer in answers.items():
-            embed.add_field(name=question, value=answer, inline=False)
+        
+        embed.add_field(name="Player Information", value="\u200b", inline=False)
+        embed.add_field(name="Epic Account ID", value=answers["Epic Account ID:"], inline=True)
+        embed.add_field(name="Rank", value=answers["Rank:"], inline=True)
+        embed.add_field(name="Primary Platform", value=answers["Primary Platform (PC, Xbox, PlayStation, Switch):"], inline=True)
+        
+        embed.add_field(name="Tournament Preferences", value="\u200b", inline=False)
+        embed.add_field(name="Preferred Region", value=answers["Preferred Region for Matches (NA East, NA West, EU, Other - please specify if Other):"], inline=True)
+        
+        embed.add_field(name="Tournament Rules & Agreement", value="\u200b", inline=False)
+        embed.add_field(name="Read Rules", value=answers["Have you read and understood the tournament rules? (Yes/No)"], inline=True)
+        embed.add_field(name="Agree to Code of Conduct", value=answers["Do you agree to follow the tournament code of conduct? (Yes/No)"], inline=True)
+        
+        embed.add_field(name="Additional Information", value=answers["Any special requests or additional notes? (e.g., match scheduling preferences, etc)"], inline=False)
 
         view = AdminResponseView(self, user.id, user.guild.id)
         await admin_user.send(embed=embed, view=view)
@@ -334,6 +360,19 @@ class ChampionsCircle(commands.Cog):
 
         await ctx.send(embed=embed)
 
+    async def fetch_rocket_league_stats(self, epic_id: str):
+        url = f"https://rocketleague.tracker.network/rocket-league/profile/epic/{epic_id}/overview"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    soup = BeautifulSoup(await response.text(), 'html.parser')
+                    # Here you would parse the HTML to extract the relevant information
+                    # This is a placeholder and would need to be adjusted based on the actual HTML structure
+                    rank = soup.find('div', class_='top-score').text.strip()
+                    return {"rank": rank}
+                else:
+                    return None
+
 class QuestionnaireView(discord.ui.View):
     def __init__(self, cog, user):
         super().__init__(timeout=600)  # 10 minutes timeout
@@ -354,7 +393,6 @@ class QuestionnaireView(discord.ui.View):
     async def ask_questions(self):
         questions = [
             "Epic Account ID:",
-            "Rank:",
             "Primary Platform (PC, Xbox, PlayStation, Switch):",
             "Preferred Region for Matches (NA East, NA West, EU, Other - please specify if Other):",
             "Have you read and understood the tournament rules? (Yes/No)",
@@ -371,6 +409,17 @@ class QuestionnaireView(discord.ui.View):
             try:
                 answer = await self.cog.bot.wait_for('message', check=check, timeout=300)  # 5 minutes timeout per question
                 self.answers[question] = answer.content
+
+                if question == "Epic Account ID:":
+                    stats = await self.cog.fetch_rocket_league_stats(answer.content)
+                    if stats:
+                        self.answers["Rank:"] = stats["rank"]
+                        await self.user.send(f"Your rank has been automatically fetched: {stats['rank']}")
+                    else:
+                        await self.user.send("Unable to fetch rank automatically. Please provide your rank manually.")
+                        rank_answer = await self.cog.bot.wait_for('message', check=check, timeout=300)
+                        self.answers["Rank:"] = rank_answer.content
+
             except asyncio.TimeoutError:
                 await self.user.send("You took too long to answer. The questionnaire has been cancelled.")
                 return
@@ -399,7 +448,11 @@ class SubmitView(discord.ui.View):
             await self.cog.send_answers_to_admin(self.user, self.answers)
             active_applications = await self.cog.config.guild(guild).active_applications()
             if self.user.id not in [app["user_id"] for app in active_applications]:
-                active_applications.append({"user_id": self.user.id, "timestamp": datetime.now().timestamp()})
+                active_applications.append({
+                    "user_id": self.user.id, 
+                    "timestamp": datetime.now().timestamp(),
+                    "rank": self.answers.get("Rank:", "Unknown")  # Add rank to the stored data
+                })
                 await self.cog.config.guild(guild).active_applications.set(active_applications)
             cancelled_applications = await self.cog.config.guild(guild).cancelled_applications()
             if self.user.id in cancelled_applications:
