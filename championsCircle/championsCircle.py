@@ -21,10 +21,12 @@ class ChampionsCircle(commands.Cog):
         self.config.register_guild(**default_guild)
         self.logger = logging.getLogger("red.championsCircle")
         self.admin_user_id = 131881984690487296  # Replace with the actual admin user ID
+        self.application_cooldowns = commands.CooldownMapping.from_cooldown(1, 86400, commands.BucketType.user)
 
     @commands.Cog.listener()
     async def on_ready(self):
         self.logger.info(f"ChampionsCircle is ready!")
+        self.bot.loop.create_task(self.close_expired_applications())
 
     @commands.command()
     async def setup_join_button(self, ctx):
@@ -233,6 +235,7 @@ class ChampionsCircle(commands.Cog):
         """Set the Champions Circle channel."""
         await self.config.guild(ctx.guild).champions_channel.set(channel.id)
         await ctx.send(f"Champions Circle channel set to {channel.mention}")
+        self.logger.info(f"Champions Circle channel set to {channel.id} in guild {ctx.guild.id}")
 
     @commands.command()
     @commands.admin_or_permissions(administrator=True)
@@ -241,26 +244,55 @@ class ChampionsCircle(commands.Cog):
         await self.config.guild(ctx.guild).application_duration.set(days)
         await ctx.send(f"Application duration set to {days} days.")
 
+    @commands.command()
+    @commands.admin_or_permissions(administrator=True)
+    async def setchampionsrole(self, ctx, role: discord.Role):
+        """Set the Champions Circle role."""
+        await self.config.guild(ctx.guild).champions_role_id.set(role.id)
+        await ctx.send(f"Champions Circle role set to {role.name}")
+        self.logger.info(f"Champions Circle role set to {role.id} in guild {ctx.guild.id}")
+
     async def close_expired_applications(self):
         """Close applications that have expired."""
-        all_guilds = await self.config.all_guilds()
-        for guild_id, guild_data in all_guilds.items():
-            guild = self.bot.get_guild(guild_id)
-            if not guild:
-                continue
+        while self == self.bot.get_cog("ChampionsCircle"):
+            try:
+                all_guilds = await self.config.all_guilds()
+                for guild_id, guild_data in all_guilds.items():
+                    guild = self.bot.get_guild(guild_id)
+                    if not guild:
+                        continue
+                    
+                    active_apps = guild_data["active_applications"]
+                    for app in active_apps[:]:  # Create a copy of the list to iterate over
+                        if "timestamp" in app and datetime.now() - datetime.fromtimestamp(app["timestamp"]) > timedelta(days=guild_data["application_duration"]):
+                            active_apps.remove(app)
+                            guild_data["cancelled_applications"].append(app)
+                            user = guild.get_member(app["user_id"])
+                            if user:
+                                try:
+                                    await user.send("Your Champions Circle application has expired.")
+                                except discord.HTTPException:
+                                    self.logger.error(f"Failed to send expiration message to user {user.id}")
+                    
+                    await self.config.guild(guild).active_applications.set(active_apps)
+                    await self.config.guild(guild).cancelled_applications.set(guild_data["cancelled_applications"])
+                    await self.update_embed(guild)
+            except Exception as e:
+                self.logger.error(f"Error in close_expired_applications: {str(e)}")
             
-            active_apps = guild_data["active_applications"]
-            for app in active_apps:
-                if datetime.now() - app["timestamp"] > timedelta(days=guild_data["application_duration"]):
-                    active_apps.remove(app)
-                    guild_data["cancelled_applications"].append(app)
-                    user = guild.get_member(app["user_id"])
-                    if user:
-                        await user.send("Your Champions Circle application has expired.")
-            
-            await self.config.guild(guild).active_applications.set(active_apps)
-            await self.config.guild(guild).cancelled_applications.set(guild_data["cancelled_applications"])
-            await self.update_embed(guild)
+            await asyncio.sleep(3600)  # Check every hour
+
+    @commands.command()
+    async def championscirclehelp(self, ctx):
+        """Display help information for the Champions Circle cog."""
+        embed = discord.Embed(title="Champions Circle Help", description="Commands and information for the Champions Circle cog", color=0x00ff00)
+        embed.add_field(name="setup_join_button", value="Set up the join button for Champions Circle applications", inline=False)
+        embed.add_field(name="cancel_application", value="Cancel your active Champions Circle application", inline=False)
+        embed.add_field(name="setchampionschannel", value="Set the Champions Circle channel (Admin only)", inline=False)
+        embed.add_field(name="setapplicationduration", value="Set the duration for which applications remain open (Admin only)", inline=False)
+        embed.add_field(name="setchampionsrole", value="Set the Champions Circle role (Admin only)", inline=False)
+        embed.add_field(name="endtourney", value="End the current tournament and reset the cog (Admin only)", inline=False)
+        await ctx.send(embed=embed)
 
 class QuestionnaireView(discord.ui.View):
     def __init__(self, cog, user):
@@ -316,7 +348,7 @@ class SubmitView(discord.ui.View):
         await self.cog.send_answers_to_admin(self.user, self.answers)
         active_applications = await self.cog.config.guild(interaction.guild).active_applications()
         if self.user.id not in active_applications:
-            active_applications.append(self.user.id)
+            active_applications.append({"user_id": self.user.id, "timestamp": datetime.now().timestamp()})
             await self.cog.config.guild(interaction.guild).active_applications.set(active_applications)
         cancelled_applications = await self.cog.config.guild(interaction.guild).cancelled_applications()
         if self.user.id in cancelled_applications:
@@ -387,8 +419,13 @@ class JoinButton(discord.ui.Button):
         super().__init__(style=discord.ButtonStyle.green, label="Apply for Champions Circle", custom_id="join_champions")
         self.cog = cog
 
-    @discord.ext.commands.cooldown(1, 86400, discord.ext.commands.BucketType.user)  # Once per day
     async def callback(self, interaction: discord.Interaction):
+        bucket = self.cog.application_cooldowns.get_bucket(interaction.message)
+        retry_after = bucket.update_rate_limit()
+        if retry_after:
+            await interaction.response.send_message(f"You can apply again in {retry_after:.2f} seconds.", ephemeral=True)
+            return
+
         if interaction.user.id in await self.cog.config.guild(interaction.guild).active_applications():
             await interaction.response.send_message("You already have an active application for the Champions Circle.", ephemeral=True)
             return
@@ -440,4 +477,6 @@ class CancelApplicationButton(discord.ui.Button):
         await self.cog.update_embed(interaction.guild)
 
 async def setup(bot):
-    await bot.add_cog(ChampionsCircle(bot))
+    cog = ChampionsCircle(bot)
+    await bot.add_cog(cog)
+    bot.loop.create_task(cog.close_expired_applications())
