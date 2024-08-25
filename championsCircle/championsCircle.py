@@ -390,54 +390,71 @@ class ChampionsCircle(commands.Cog):
             self.display.stop()
 
     async def fetch_rocket_league_stats(self, epic_id: str):
-        await self.setup_selenium()
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
 
+        driver = webdriver.Chrome(options=chrome_options)
+        
         try:
-            url = f"https://api.tracker.gg/api/v2/rocket-league/standard/profile/epic/{epic_id}"
-            self.driver.get(url)
+            url = f"https://rocketleague.tracker.network/rocket-league/profile/epic/{epic_id}/overview"
+            driver.get(url)
 
-            # Wait for the pre element containing the JSON to be present
-            wait = WebDriverWait(self.driver, 10)
-            json_element = wait.until(EC.presence_of_element_located((By.TAG_NAME, "pre")))
+            # Wait for the content to load
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "trn-profile-header"))
+            )
 
-            # Get the JSON content
-            json_content = json_element.text
+            # Extract the JSON data from the page
+            script_element = driver.find_element(By.XPATH, "//script[contains(text(), 'window.__INITIAL_STATE__')]")
+            script_content = script_element.get_attribute('innerHTML')
+            
+            # Use regex to extract the JSON part
+            match = re.search(r'window\.__INITIAL_STATE__\s*=\s*({.*});', script_content, re.DOTALL)
+            if match:
+                json_str = match.group(1)
+                data = json.loads(json_str)
 
-            # Parse the JSON
-            data = json.loads(json_content)
-
-            if 'data' in data:
-                segments = data['data']['segments']
-                overview = next((segment for segment in segments if segment['type'] == 'overview'), None)
-                
-                if overview:
-                    peak_rating = overview['stats']['rating']['value']
-                    peak_playlist = "Overall"
+                if 'stats' in data and 'segments' in data['stats']:
+                    segments = data['stats']['segments']
+                    overview = next((segment for segment in segments if segment['metadata']['name'] == 'Lifetime'), None)
                     
-                    current_ranks = {}
-                    peak_ranks = {}
-                    
-                    for segment in segments:
-                        if segment['type'] == 'playlist':
-                            playlist_name = segment['metadata']['name']
-                            current_rank = segment['stats']['rating']['value']
-                            peak_rank = segment['stats']['seasonRewardLevel']['metadata']['rankName']
-                            
-                            current_ranks[playlist_name] = current_rank
-                            peak_ranks[playlist_name] = peak_rank
-                    
-                    return {
-                        "peak_rating": f"{peak_rating} ({peak_playlist})",
-                        "current_ranks": current_ranks,
-                        "peak_ranks": peak_ranks
-                    }
+                    if overview:
+                        peak_rating = overview['stats']['seasonRewardLevel']['metadata']['rankName']
+                        current_ranks = {}
+                        peak_ranks = {}
+                        
+                        for segment in segments:
+                            if segment['type'] == 'playlist':
+                                playlist_name = segment['metadata']['name']
+                                current_rank = segment['stats']['tier']['metadata']['name']
+                                peak_rank = segment['stats']['rating']['metadata']['tierName']
+                                
+                                current_ranks[playlist_name] = current_rank
+                                peak_ranks[playlist_name] = peak_rank
+                        
+                        return {
+                            "peak_rating": peak_rating,
+                            "current_ranks": current_ranks,
+                            "peak_ranks": peak_ranks
+                        }
+                    else:
+                        return {"error": "Unable to find overview data"}
                 else:
-                    return {"error": "Unable to find overview data"}
+                    return {"error": "Invalid data format received"}
             else:
-                return {"error": "Invalid data format received"}
+                return {"error": "Unable to extract data from the page"}
+
+        except TimeoutException:
+            return {"error": "Page load timed out"}
+        except NoSuchElementException:
+            return {"error": "Required element not found on the page"}
         except Exception as e:
             self.logger.error(f"Error fetching Rocket League stats: {str(e)}")
             return {"error": f"An error occurred: {str(e)}"}
+        finally:
+            driver.quit()
 
 class QuestionnaireView(discord.ui.View):
     def __init__(self, cog, user):
