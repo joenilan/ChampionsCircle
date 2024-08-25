@@ -231,8 +231,9 @@ class ChampionsCircle(commands.Cog):
         
         embed.add_field(name="Player Information", value="\u200b", inline=False)
         embed.add_field(name="Epic Account ID", value=answers["Epic Account ID:"], inline=True)
-        embed.add_field(name="Current Rank", value=answers.get("Current Rank:", "Not provided"), inline=True)
-        embed.add_field(name="Peak Rank", value=answers.get("Peak Rank:", "Not provided"), inline=True)
+        embed.add_field(name="Peak Rating", value=answers.get("Peak Rating", "Not provided"), inline=True)
+        embed.add_field(name="Current Ranks", value=answers.get("Current Ranks", "Not provided"), inline=False)
+        embed.add_field(name="Peak Ranks", value=answers.get("Peak Ranks", "Not provided"), inline=False)
         embed.add_field(name="Primary Platform", value=answers["Primary Platform (PC, Xbox, PlayStation, Switch):"], inline=True)
         
         embed.add_field(name="Tournament Preferences", value="\u200b", inline=False)
@@ -368,31 +369,38 @@ class ChampionsCircle(commands.Cog):
                 if response.status == 200:
                     soup = BeautifulSoup(await response.text(), 'html.parser')
                     
-                    # Find all playlist divs
-                    playlist_divs = soup.find_all('div', class_='playlist-breakdown')
-                    
-                    current_rank = "Unranked"
-                    peak_rank = "Unranked"
-                    
-                    for div in playlist_divs:
-                        # Look for 'Rating' which typically indicates the main ranked playlist
-                        if 'Rating' in div.text:
-                            # Find current and peak ranks
-                            ranks = div.find_all('div', class_='rank')
-                            if len(ranks) >= 2:
-                                current_rank = ranks[0].text.strip()
-                                peak_rank = ranks[1].text.strip()
-                            break  # Stop after finding the first relevant playlist
-                    
-                    return {
-                        "current_rank": current_rank,
-                        "peak_rank": peak_rank
-                    }
+                    # Find the Peak Rating section
+                    peak_rating_div = soup.find('div', string='Peak Rating')
+                    if peak_rating_div:
+                        peak_rating_section = peak_rating_div.find_parent('div', class_='card')
+                        
+                        # Extract peak rating
+                        peak_rating = peak_rating_section.find('div', class_='value').text.strip()
+                        peak_playlist = peak_rating_section.find('div', class_='subtext').text.strip()
+                        
+                        # Find all playlist sections
+                        playlist_sections = soup.find_all('div', class_='playlist')
+                        
+                        current_ranks = {}
+                        peak_ranks = {}
+                        
+                        for section in playlist_sections:
+                            playlist_name = section.find('div', class_='playlist-name').text.strip()
+                            current_rank = section.find('div', string='Current').find_next('div', class_='value').text.strip() if section.find('div', string='Current') else 'Unranked'
+                            best_rank = section.find('div', string='Best').find_next('div', class_='value').text.strip() if section.find('div', string='Best') else 'Unranked'
+                            
+                            current_ranks[playlist_name] = current_rank
+                            peak_ranks[playlist_name] = best_rank
+                        
+                        return {
+                            "peak_rating": f"{peak_rating} ({peak_playlist})",
+                            "current_ranks": current_ranks,
+                            "peak_ranks": peak_ranks
+                        }
+                    else:
+                        return {"error": "Unable to find rank information"}
                 else:
-                    return {
-                        "current_rank": "Unable to fetch rank",
-                        "peak_rank": "Unable to fetch rank"
-                    }
+                    return {"error": "Unable to fetch rank information"}
 
 class QuestionnaireView(discord.ui.View):
     def __init__(self, cog, user):
@@ -433,17 +441,18 @@ class QuestionnaireView(discord.ui.View):
 
                 if question == "Epic Account ID:":
                     stats = await self.cog.fetch_rocket_league_stats(answer.content)
-                    if stats["current_rank"] != "Unable to fetch rank":
-                        self.answers["Current Rank:"] = stats["current_rank"]
-                        self.answers["Peak Rank:"] = stats["peak_rank"]
-                        await self.user.send(f"Your ranks have been automatically fetched:\nCurrent Rank: {stats['current_rank']}\nPeak Rank: {stats['peak_rank']}")
+                    if "error" not in stats:
+                        self.answers["Peak Rating"] = stats["peak_rating"]
+                        self.answers["Current Ranks"] = ", ".join([f"{k}: {v}" for k, v in stats["current_ranks"].items()])
+                        self.answers["Peak Ranks"] = ", ".join([f"{k}: {v}" for k, v in stats["peak_ranks"].items()])
+                        await self.user.send(f"Your ranks have been automatically fetched:\nPeak Rating: {stats['peak_rating']}\nCurrent Ranks: {self.answers['Current Ranks']}\nPeak Ranks: {self.answers['Peak Ranks']}")
                     else:
                         await self.user.send("Unable to fetch ranks automatically. Please provide your current rank manually.")
                         rank_answer = await self.cog.bot.wait_for('message', check=check, timeout=300)
-                        self.answers["Current Rank:"] = rank_answer.content
+                        self.answers["Current Rank"] = rank_answer.content
                         await self.user.send("Now, please provide your peak rank.")
                         peak_rank_answer = await self.cog.bot.wait_for('message', check=check, timeout=300)
-                        self.answers["Peak Rank:"] = peak_rank_answer.content
+                        self.answers["Peak Rank"] = peak_rank_answer.content
 
             except asyncio.TimeoutError:
                 await self.user.send("You took too long to answer. The questionnaire has been cancelled.")
