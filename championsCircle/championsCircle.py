@@ -211,7 +211,7 @@ class ChampionsCircle(commands.Cog):
         for question, answer in answers.items():
             embed.add_field(name=question, value=answer, inline=False)
 
-        view = AdminResponseView(self, user.id)
+        view = AdminResponseView(self, user.id, user.guild.id)
         await admin_user.send(embed=embed, view=view)
 
     @commands.command()
@@ -219,7 +219,7 @@ class ChampionsCircle(commands.Cog):
         """Cancel your Champions Circle application."""
         if ctx.author.id in await self.config.guild(ctx.guild).active_applications():
             active_applications = await self.config.guild(ctx.guild).active_applications()
-            active_applications.remove(ctx.author.id)
+            active_applications = [app for app in active_applications if app["user_id"] != ctx.author.id]
             await self.config.guild(ctx.guild).active_applications.set(active_applications)
             cancelled_applications = await self.config.guild(ctx.guild).cancelled_applications()
             cancelled_applications.append(ctx.author.id)
@@ -342,56 +342,75 @@ class QuestionnaireView(discord.ui.View):
                 await self.user.send("You took too long to answer. The questionnaire has been cancelled.")
                 return
 
-        submit_view = SubmitView(self.cog, self.user, self.answers)
+        submit_view = SubmitView(self.cog, self.user, self.answers, self.user.guild.id)
         await self.user.send("Thank you for answering the questions. Would you like to submit your answers?", view=submit_view)
 
 class SubmitView(discord.ui.View):
-    def __init__(self, cog, user, answers):
+    def __init__(self, cog, user, answers, guild_id):
         super().__init__()
         self.cog = cog
         self.user = user
         self.answers = answers
+        self.guild_id = guild_id
 
     @discord.ui.button(label="Submit", style=discord.ButtonStyle.green)
     async def submit(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("Your answers have been submitted. Thank you!", ephemeral=True)
-        await self.cog.send_answers_to_admin(self.user, self.answers)
-        active_applications = await self.cog.config.guild(interaction.guild).active_applications()
-        if self.user.id not in active_applications:
-            active_applications.append({"user_id": self.user.id, "timestamp": datetime.now().timestamp()})
-            await self.cog.config.guild(interaction.guild).active_applications.set(active_applications)
-        cancelled_applications = await self.cog.config.guild(interaction.guild).cancelled_applications()
-        if self.user.id in cancelled_applications:
-            cancelled_applications.remove(self.user.id)
-            await self.cog.config.guild(interaction.guild).cancelled_applications.set(cancelled_applications)
-        await self.cog.update_embed(interaction.guild)
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            guild = self.cog.bot.get_guild(self.guild_id)
+            if not guild:
+                await interaction.followup.send("Error: Unable to find the guild. Please try again or contact an administrator.", ephemeral=True)
+                return
+
+            await self.cog.send_answers_to_admin(self.user, self.answers)
+            active_applications = await self.cog.config.guild(guild).active_applications()
+            if self.user.id not in [app["user_id"] for app in active_applications]:
+                active_applications.append({"user_id": self.user.id, "timestamp": datetime.now().timestamp()})
+                await self.cog.config.guild(guild).active_applications.set(active_applications)
+            cancelled_applications = await self.cog.config.guild(guild).cancelled_applications()
+            if self.user.id in cancelled_applications:
+                cancelled_applications.remove(self.user.id)
+                await self.cog.config.guild(guild).cancelled_applications.set(cancelled_applications)
+            await self.cog.update_embed(guild)
+            
+            await interaction.followup.send("Your answers have been submitted. Thank you!", ephemeral=True)
+        except Exception as e:
+            self.cog.logger.error(f"Error in submit button: {str(e)}")
+            await interaction.followup.send("An error occurred while submitting your application. Please try again or contact an administrator.", ephemeral=True)
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("Your application has been cancelled.", ephemeral=True)
-        active_applications = await self.cog.config.guild(interaction.guild).active_applications()
-        if self.user.id in active_applications:
-            active_applications.remove(self.user.id)
-            await self.cog.config.guild(interaction.guild).active_applications.set(active_applications)
-        cancelled_applications = await self.cog.config.guild(interaction.guild).cancelled_applications()
-        if self.user.id not in cancelled_applications:
-            cancelled_applications.append(self.user.id)
-            await self.cog.config.guild(interaction.guild).cancelled_applications.set(cancelled_applications)
-        await self.cog.update_embed(interaction.guild)
+        guild = self.cog.bot.get_guild(self.guild_id)
+        if guild:
+            active_applications = await self.cog.config.guild(guild).active_applications()
+            active_applications = [app for app in active_applications if app["user_id"] != self.user.id]
+            await self.cog.config.guild(guild).active_applications.set(active_applications)
+            cancelled_applications = await self.cog.config.guild(guild).cancelled_applications()
+            if self.user.id not in cancelled_applications:
+                cancelled_applications.append(self.user.id)
+                await self.cog.config.guild(guild).cancelled_applications.set(cancelled_applications)
+            await self.cog.update_embed(guild)
         self.stop()
 
 class AdminResponseView(discord.ui.View):
-    def __init__(self, cog, applicant_id):
+    def __init__(self, cog, applicant_id, guild_id):
         super().__init__()
         self.cog = cog
         self.applicant_id = applicant_id
+        self.guild_id = guild_id
 
     @discord.ui.button(label="Approve", style=discord.ButtonStyle.green)
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
             await interaction.response.defer()
             
-            guild = interaction.guild
+            guild = self.cog.bot.get_guild(self.guild_id)
+            if not guild:
+                await interaction.followup.send("Error: Unable to find the guild. Please try again or contact an administrator.")
+                return
+
             active_applications = await self.cog.config.guild(guild).active_applications()
             active_applications = [app for app in active_applications if app["user_id"] != self.applicant_id]
             await self.cog.config.guild(guild).active_applications.set(active_applications)
@@ -424,7 +443,11 @@ class AdminResponseView(discord.ui.View):
         try:
             await interaction.response.defer()
             
-            guild = interaction.guild
+            guild = self.cog.bot.get_guild(self.guild_id)
+            if not guild:
+                await interaction.followup.send("Error: Unable to find the guild. Please try again or contact an administrator.")
+                return
+
             active_applications = await self.cog.config.guild(guild).active_applications()
             active_applications = [app for app in active_applications if app["user_id"] != self.applicant_id]
             await self.cog.config.guild(guild).active_applications.set(active_applications)
@@ -475,7 +498,7 @@ class CancelApplicationButton(discord.ui.Button):
         user_id = interaction.user.id
         active_applications = await self.cog.config.guild(interaction.guild).active_applications()
         if user_id in active_applications:
-            active_applications.remove(user_id)
+            active_applications = [app for app in active_applications if app["user_id"] != user_id]
             cancelled_applications = await self.cog.config.guild(interaction.guild).cancelled_applications()
             cancelled_applications.append(user_id)
             await self.cog.config.guild(interaction.guild).active_applications.set(active_applications)
