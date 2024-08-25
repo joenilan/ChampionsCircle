@@ -171,18 +171,14 @@ class ChampionsCircle(commands.Cog):
     async def update_embed(self, guild):
         embed = discord.Embed(title="Champions Circle Applications", description="Current applicants and their status.", color=0x00ff00)
         
-        # Active Applications and Approved Applications side by side
-        active_list = "\n".join([f"<@{user_id}>" for user_id in await self.config.guild(guild).active_applications()]) if await self.config.guild(guild).active_applications() else "No active applications"
-        approved_list = "\n".join([f"<@{user_id}>" for user_id in await self.config.guild(guild).approved_applications()]) if await self.config.guild(guild).approved_applications() else "No approved applications"
+        active_list = "\n".join([f"<@{app['user_id']}>" for app in await self.config.guild(guild).active_applications()]) or "No active applications"
+        approved_list = "\n".join([f"<@{user_id}>" for user_id in await self.config.guild(guild).approved_applications()]) or "No approved applications"
+        denied_list = "\n".join([f"<@{user_id}>" for user_id in await self.config.guild(guild).denied_applications()]) or "No denied applications"
+        cancelled_list = "\n".join([f"<@{user_id}>" for user_id in await self.config.guild(guild).cancelled_applications()]) or "No cancelled applications"
+        
         embed.add_field(name="Active Applications", value=active_list, inline=True)
         embed.add_field(name="Approved Applications", value=approved_list, inline=True)
-        
-        # Add a blank field to force the next row
-        embed.add_field(name="\u200b", value="\u200b", inline=True)
-        
-        # Denied Applications and Cancelled Applications side by side
-        denied_list = "\n".join([f"<@{user_id}>" for user_id in await self.config.guild(guild).denied_applications()]) if await self.config.guild(guild).denied_applications() else "No denied applications"
-        cancelled_list = "\n".join([f"<@{user_id}>" for user_id in await self.config.guild(guild).cancelled_applications()]) if await self.config.guild(guild).cancelled_applications() else "No cancelled applications"
+        embed.add_field(name="\u200b", value="\u200b", inline=True)  # Empty field for spacing
         embed.add_field(name="Denied Applications", value=denied_list, inline=True)
         embed.add_field(name="Cancelled Applications", value=cancelled_list, inline=True)
 
@@ -402,9 +398,13 @@ class AdminResponseView(discord.ui.View):
         self.guild_id = guild_id
 
     async def remove_from_all_lists(self, guild):
-        for list_name in ['active_applications', 'approved_applications', 'denied_applications', 'cancelled_applications']:
+        active_applications = await self.cog.config.guild(guild).active_applications()
+        active_applications = [app for app in active_applications if app['user_id'] != self.applicant_id]
+        await self.cog.config.guild(guild).active_applications.set(active_applications)
+
+        for list_name in ['approved_applications', 'denied_applications', 'cancelled_applications']:
             current_list = await self.cog.config.guild(guild).get_raw(list_name)
-            current_list = [app for app in current_list if app != self.applicant_id]
+            current_list = [user_id for user_id in current_list if user_id != self.applicant_id]
             await self.cog.config.guild(guild).set_raw(list_name, value=current_list)
 
     @discord.ui.button(label="Approve", style=discord.ButtonStyle.green)
