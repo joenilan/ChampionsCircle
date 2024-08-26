@@ -202,14 +202,13 @@ class ChampionsCircle(commands.Cog):
         temp_msg = await channel.send("Tournament ended. Channel cleared, cog state reset, and application cooldowns reset. You can now use the starttourney command for a new tournament.", delete_after=10)
 
     async def update_embed(self, guild):
-        embed = discord.Embed(title="Champions Circle Tournament", color=0x00ff00)
+        tourney_title = await self.config.guild(guild).tourney_title()
+        embed = discord.Embed(title=tourney_title, color=0x00ff00)
         
         # Add tournament details
-        tourney_title = await self.config.guild(guild).tourney_title()
         tourney_description = await self.config.guild(guild).tourney_description()
         tourney_time = await self.config.guild(guild).tourney_time()
         
-        embed.add_field(name="Tournament", value=tourney_title, inline=False)
         embed.add_field(name="Description", value=tourney_description, inline=False)
         
         if tourney_time:
