@@ -231,10 +231,10 @@ class ChampionsCircle(commands.Cog):
         cancelled_applications = await self.config.guild(guild).cancelled_applications()
         cancelled_list = "\n".join([await format_user_entry(user_id, {}) for user_id in cancelled_applications]) or "No cancelled applications"
         
-        embed.add_field(name="Active Applications", value=active_list, inline=False)
-        embed.add_field(name="Approved Applications", value=approved_list, inline=False)
-        embed.add_field(name="Denied Applications", value=denied_list, inline=False)
-        embed.add_field(name="Cancelled Applications", value=cancelled_list, inline=False)
+        embed.add_field(name="🟦 Active Applications", value=active_list, inline=False)
+        embed.add_field(name="🟩 Approved Applications", value=approved_list, inline=False)
+        embed.add_field(name="🟥 Denied Applications", value=denied_list, inline=False)
+        embed.add_field(name="🟨 Cancelled Applications", value=cancelled_list, inline=False)
 
         channel = self.bot.get_channel(await self.config.guild(guild).champions_channel())
         if not channel:
