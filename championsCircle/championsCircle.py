@@ -213,6 +213,8 @@ class ChampionsCircle(commands.Cog):
         
         if tourney_time:
             embed.add_field(name="Time", value=f"<t:{tourney_time}:F>", inline=False)
+        else:
+            embed.add_field(name="Time", value="Not set", inline=False)
         
         async def format_user_entry(application):
             user_id = application['user_id']
