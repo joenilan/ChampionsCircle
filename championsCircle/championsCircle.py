@@ -1,5 +1,6 @@
 import discord
 from redbot.core import commands, Config
+from discord.ext.commands import guild_only
 import asyncio
 import logging
 from datetime import datetime, timedelta
@@ -352,25 +353,6 @@ class ChampionsCircle(commands.Cog):
         """Manage custom questions for the Champions Circle application."""
         if ctx.invoked_subcommand is None:
             await ctx.send_help(ctx.command)
-
-    @questions.command(name="add")
-    @guild_only()
-    async def add_question(self, ctx, *, question: str):
-        """Add a custom question to the Champions Circle application."""
-        async with self.config.guild(ctx.guild).custom_questions() as questions:
-            questions.append(question)
-        await ctx.send(f"Question added: {question}")
-
-    @questions.command(name="remove")
-    @guild_only()
-    async def remove_question(self, ctx, index: int):
-        """Remove a custom question from the Champions Circle application."""
-        async with self.config.guild(ctx.guild).custom_questions() as questions:
-            if 1 <= index <= len(questions):
-                removed_question = questions.pop(index - 1)
-                await ctx.send(f"Question removed: {removed_question}")
-            else:
-                await ctx.send("Invalid question index.")
 
     @questions.command(name="add")
     @guild_only()
