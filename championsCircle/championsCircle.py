@@ -43,6 +43,7 @@ class ChampionsCircle(commands.Cog):
 
     @commands.command()
     @commands.has_permissions(administrator=True)
+    @guild_only()
     async def starttourney(self, ctx):
         """Start a new tournament and set up the join button for Champions Circle applications."""
         if ctx.channel.id != await self.config.guild(ctx.guild).champions_channel():
@@ -68,6 +69,7 @@ class ChampionsCircle(commands.Cog):
 
     @commands.command()
     @commands.has_permissions(administrator=True)
+    @guild_only()
     async def test_role_assign(self, ctx, member: discord.Member):
         role = ctx.guild.get_role(await self.config.guild(ctx.guild).champions_role_id())
         if role is None:
@@ -82,6 +84,7 @@ class ChampionsCircle(commands.Cog):
             await ctx.send(f"An error occurred: {str(e)}")
 
     @commands.command()
+    @guild_only()
     async def list_champions(self, ctx):
         active_applications = await self.config.guild(ctx.guild).active_applications()
         if not active_applications:
@@ -98,6 +101,7 @@ class ChampionsCircle(commands.Cog):
 
     @commands.command()
     @commands.has_permissions(administrator=True)
+    @guild_only()
     async def clearall(self, ctx):
         """Clear all messages in the Champions Circle channel."""
         if ctx.channel.id != await self.config.guild(ctx.guild).champions_channel():
@@ -132,6 +136,7 @@ class ChampionsCircle(commands.Cog):
 
     @commands.command()
     @commands.has_permissions(administrator=True)
+    @guild_only()
     async def endtourney(self, ctx):
         """End the current tournament, clear the channel, and reset the cog's state."""
         if ctx.channel.id != await self.config.guild(ctx.guild).champions_channel():
@@ -231,6 +236,7 @@ class ChampionsCircle(commands.Cog):
         await admin_user.send(embed=embed, view=view)
 
     @commands.command()
+    @guild_only()
     async def cancel_application(self, ctx):
         """Cancel your Champions Circle application."""
         if ctx.author.id in await self.config.guild(ctx.guild).active_applications():
@@ -247,6 +253,7 @@ class ChampionsCircle(commands.Cog):
 
     @commands.command()
     @commands.admin_or_permissions(administrator=True)
+    @guild_only()
     async def setchampionschannel(self, ctx, channel: discord.TextChannel):
         """Set the Champions Circle channel."""
         await self.config.guild(ctx.guild).champions_channel.set(channel.id)
@@ -254,6 +261,7 @@ class ChampionsCircle(commands.Cog):
 
     @commands.command()
     @commands.admin_or_permissions(administrator=True)
+    @guild_only()
     async def setapplicationduration(self, ctx, days: int):
         """Set the duration for which applications remain open."""
         await self.config.guild(ctx.guild).application_duration.set(days)
@@ -261,6 +269,7 @@ class ChampionsCircle(commands.Cog):
 
     @commands.command()
     @commands.admin_or_permissions(administrator=True)
+    @guild_only()
     async def setchampionsrole(self, ctx, role: discord.Role):
         """Set the Champions Circle role."""
         await self.config.guild(ctx.guild).champions_role_id.set(role.id)
@@ -297,6 +306,7 @@ class ChampionsCircle(commands.Cog):
             await asyncio.sleep(3600)  # Check every hour
 
     @commands.command()
+    @guild_only()
     async def cchelp(self, ctx):
         """Display help information for the Champions Circle cog."""
         embed = discord.Embed(title="Champions Circle Help", description="Commands and information for the Champions Circle cog", color=0x00ff00)
@@ -324,6 +334,7 @@ class ChampionsCircle(commands.Cog):
 
     @commands.command()
     @commands.has_permissions(administrator=True)
+    @guild_only()
     async def championssettings(self, ctx):
         """Display current settings for the Champions Circle cog."""
         guild = ctx.guild
@@ -349,6 +360,7 @@ class ChampionsCircle(commands.Cog):
 
     @commands.group()
     @commands.admin_or_permissions(administrator=True)
+    @guild_only()
     async def questions(self, ctx):
         """Manage custom questions for the Champions Circle application."""
         if ctx.invoked_subcommand is None:
