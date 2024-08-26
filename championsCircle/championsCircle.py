@@ -16,7 +16,16 @@ class ChampionsCircle(commands.Cog):
             "approved_applications": [],
             "denied_applications": [],
             "champions_message_id": None,
-            "application_duration": 7  # days
+            "application_duration": 7,  # days
+            "custom_questions": [
+                "Epic Account ID:",
+                "Rank:",
+                "Primary Platform (PC, Xbox, PlayStation, Switch):",
+                "Preferred Region for Matches (NA East, NA West, EU, Other - please specify if Other):",
+                "Have you read and understood the tournament rules? (Yes/No)",
+                "Do you agree to follow the tournament code of conduct? (Yes/No)",
+                "Any special requests or additional notes? (e.g., match scheduling preferences, etc)"
+            ]
         }
         self.config.register_guild(**default_guild)
         self.logger = logging.getLogger("red.championsCircle")
@@ -306,6 +315,9 @@ class ChampionsCircle(commands.Cog):
         embed.add_field(name="clearall", value="Clear all messages in the Champions Circle channel", inline=False)
         embed.add_field(name="test_role_assign", value="Test role assignment", inline=False)
         embed.add_field(name="championssettings", value="Display current settings for the Champions Circle cog", inline=False)
+        embed.add_field(name="questions add", value="Add a custom question to the Champions Circle application", inline=False)
+        embed.add_field(name="questions remove", value="Remove a custom question from the Champions Circle application", inline=False)
+        embed.add_field(name="questions list", value="List all custom questions for the Champions Circle application", inline=False)
 
         await ctx.send(embed=embed)
 
@@ -334,6 +346,40 @@ class ChampionsCircle(commands.Cog):
 
         await ctx.send(embed=embed)
 
+    @commands.group()
+    @commands.admin_or_permissions(administrator=True)
+    async def questions(self, ctx):
+        """Manage custom questions for the Champions Circle application."""
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
+
+    @questions.command(name="add")
+    async def add_question(self, ctx, *, question: str):
+        """Add a custom question to the Champions Circle application."""
+        async with self.config.guild(ctx.guild).custom_questions() as questions:
+            questions.append(question)
+        await ctx.send(f"Question added: {question}")
+
+    @questions.command(name="remove")
+    async def remove_question(self, ctx, index: int):
+        """Remove a custom question from the Champions Circle application."""
+        async with self.config.guild(ctx.guild).custom_questions() as questions:
+            if 1 <= index <= len(questions):
+                removed_question = questions.pop(index - 1)
+                await ctx.send(f"Question removed: {removed_question}")
+            else:
+                await ctx.send("Invalid question index.")
+
+    @questions.command(name="list")
+    async def list_questions(self, ctx):
+        """List all custom questions for the Champions Circle application."""
+        questions = await self.config.guild(ctx.guild).custom_questions()
+        if questions:
+            question_list = "\n".join(f"{i+1}. {q}" for i, q in enumerate(questions))
+            await ctx.send(f"Current custom questions:\n{question_list}")
+        else:
+            await ctx.send("No custom questions set.")
+
 class QuestionnaireView(discord.ui.View):
     def __init__(self, cog, user):
         super().__init__(timeout=600)  # 10 minutes timeout
@@ -352,15 +398,7 @@ class QuestionnaireView(discord.ui.View):
         self.stop()
 
     async def ask_questions(self):
-        questions = [
-            "Epic Account ID:",
-            "Rank:",
-            "Primary Platform (PC, Xbox, PlayStation, Switch):",
-            "Preferred Region for Matches (NA East, NA West, EU, Other - please specify if Other):",
-            "Have you read and understood the tournament rules? (Yes/No)",
-            "Do you agree to follow the tournament code of conduct? (Yes/No)",
-            "Any special requests or additional notes? (e.g., match scheduling preferences, etc)"
-        ]
+        questions = await self.cog.config.guild(self.user.guild).custom_questions()
 
         for i, question in enumerate(questions, 1):
             await self.user.send(f"Question {i}: {question}")
