@@ -490,9 +490,16 @@ class ChampionsCircle(commands.Cog):
     async def set_tourney_time(self, ctx, *, time: str):
         """Set the tournament time (format: YYYY-MM-DD HH:MM)."""
         try:
+            # Parse the input time
             tourney_time = datetime.strptime(time, "%Y-%m-%d %H:%M")
+            
+            # Convert to UTC timestamp without changing the actual time
             timestamp = int(tourney_time.replace(tzinfo=timezone.utc).timestamp())
+            
+            # Store the timestamp
             await self.config.guild(ctx.guild).tourney_time.set(timestamp)
+            
+            # Confirm the time using Discord's timestamp format
             await ctx.send(f"Tournament time set to: <t:{timestamp}:F>")
             await self.update_embed(ctx.guild)
         except ValueError:
