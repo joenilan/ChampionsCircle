@@ -528,11 +528,19 @@ class AdminResponseView(discord.ui.View):
         self.applicant_id = applicant_id
         self.guild_id = guild_id
 
-    async def remove_from_all_lists(self, guild):
+    async def move_application(self, guild, target_list):
         for list_name in ['active_applications', 'approved_applications', 'denied_applications', 'cancelled_applications']:
             current_list = await self.cog.config.guild(guild).get_raw(list_name)
-            current_list = [app for app in current_list if app['user_id'] != self.applicant_id]
-            await self.cog.config.guild(guild).set_raw(list_name, value=current_list)
+            application = next((app for app in current_list if app['user_id'] == self.applicant_id), None)
+            if application:
+                current_list.remove(application)
+                await self.cog.config.guild(guild).set_raw(list_name, value=current_list)
+                if list_name != target_list:
+                    target = await self.cog.config.guild(guild).get_raw(target_list)
+                    target.append(application)
+                    await self.cog.config.guild(guild).set_raw(target_list, value=target)
+                return application
+        return None
 
     @discord.ui.button(label="Approve", style=discord.ButtonStyle.green)
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -544,17 +552,11 @@ class AdminResponseView(discord.ui.View):
                 await interaction.followup.send("Error: Unable to find the guild. Please try again or contact an administrator.")
                 return
 
-            await self.remove_from_all_lists(guild)
-            
-            active_applications = await self.cog.config.guild(guild).active_applications()
-            application = next((app for app in active_applications if app['user_id'] == self.applicant_id), None)
-            if application:
-                approved_applications = await self.cog.config.guild(guild).approved_applications()
-                approved_applications.append(application)
-                await self.cog.config.guild(guild).approved_applications.set(approved_applications)
-            else:
-                self.cog.logger.error(f"Application for user {self.applicant_id} not found in active applications.")
-            
+            application = await self.move_application(guild, 'approved_applications')
+            if not application:
+                await interaction.followup.send(f"Error: Application for <@{self.applicant_id}> not found.")
+                return
+
             await self.cog.update_embed(guild)
             
             await interaction.followup.send(f"Application for <@{self.applicant_id}> has been approved.")
@@ -584,17 +586,11 @@ class AdminResponseView(discord.ui.View):
                 await interaction.followup.send("Error: Unable to find the guild. Please try again or contact an administrator.")
                 return
 
-            await self.remove_from_all_lists(guild)
-            
-            active_applications = await self.cog.config.guild(guild).active_applications()
-            application = next((app for app in active_applications if app['user_id'] == self.applicant_id), None)
-            if application:
-                denied_applications = await self.cog.config.guild(guild).denied_applications()
-                denied_applications.append(application)
-                await self.cog.config.guild(guild).denied_applications.set(denied_applications)
-            else:
-                self.cog.logger.error(f"Application for user {self.applicant_id} not found in active applications.")
-            
+            application = await self.move_application(guild, 'denied_applications')
+            if not application:
+                await interaction.followup.send(f"Error: Application for <@{self.applicant_id}> not found.")
+                return
+
             await self.cog.update_embed(guild)
             
             await interaction.followup.send(f"Application for <@{self.applicant_id}> has been denied.")
@@ -641,43 +637,33 @@ class CancelApplicationButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         user_id = interaction.user.id
-        active_applications = await self.cog.config.guild(interaction.guild).active_applications()
-        application = next((app for app in active_applications if app['user_id'] == user_id), None)
+        guild = interaction.guild
+        application = None
+
+        for list_name in ['active_applications', 'approved_applications', 'denied_applications']:
+            current_list = await self.cog.config.guild(guild).get_raw(list_name)
+            application = next((app for app in current_list if app['user_id'] == user_id), None)
+            if application:
+                current_list.remove(application)
+                await self.cog.config.guild(guild).set_raw(list_name, value=current_list)
+                break
+
         if application:
-            active_applications = [app for app in active_applications if app['user_id'] != user_id]
-            cancelled_applications = await self.cog.config.guild(interaction.guild).cancelled_applications()
+            cancelled_applications = await self.cog.config.guild(guild).cancelled_applications()
             cancelled_applications.append(application)
-            await self.cog.config.guild(interaction.guild).active_applications.set(active_applications)
-            await self.cog.config.guild(interaction.guild).cancelled_applications.set(cancelled_applications)
-            await interaction.response.send_message("Your active Champions Circle application has been cancelled.", ephemeral=True)
-        elif user_id in [app['user_id'] for app in await self.cog.config.guild(interaction.guild).approved_applications()]:
-            approved_applications = await self.cog.config.guild(interaction.guild).approved_applications()
-            application = next(app for app in approved_applications if app['user_id'] == user_id)
-            approved_applications = [app for app in approved_applications if app['user_id'] != user_id]
-            cancelled_applications = await self.cog.config.guild(interaction.guild).cancelled_applications()
-            cancelled_applications.append(application)
-            await self.cog.config.guild(interaction.guild).approved_applications.set(approved_applications)
-            await self.cog.config.guild(interaction.guild).cancelled_applications.set(cancelled_applications)
-            # Remove the Champions role if it was assigned
-            role = interaction.guild.get_role(await self.cog.config.guild(interaction.guild).champions_role_id())
-            if role and role in interaction.user.roles:
-                await interaction.user.remove_roles(role)
-            await interaction.response.send_message("Your approved Champions Circle application has been cancelled. The Champions role has been removed if it was assigned.", ephemeral=True)
-        elif user_id in [app['user_id'] for app in await self.cog.config.guild(interaction.guild).denied_applications()]:
-            denied_applications = await self.cog.config.guild(interaction.guild).denied_applications()
-            application = next(app for app in denied_applications if app['user_id'] == user_id)
-            denied_applications = [app for app in denied_applications if app['user_id'] != user_id]
-            cancelled_applications = await self.cog.config.guild(interaction.guild).cancelled_applications()
-            cancelled_applications.append(application)
-            await self.cog.config.guild(interaction.guild).denied_applications.set(denied_applications)
-            await self.cog.config.guild(interaction.guild).cancelled_applications.set(cancelled_applications)
-            await interaction.response.send_message("Your denied Champions Circle application has been removed from the records.", ephemeral=True)
-        elif user_id in [app['user_id'] for app in await self.cog.config.guild(interaction.guild).cancelled_applications()]:
-            await interaction.response.send_message("You have already cancelled your Champions Circle application.", ephemeral=True)
+            await self.cog.config.guild(guild).cancelled_applications.set(cancelled_applications)
+
+            if list_name == 'approved_applications':
+                role = guild.get_role(await self.cog.config.guild(guild).champions_role_id())
+                if role and role in interaction.user.roles:
+                    await interaction.user.remove_roles(role)
+                await interaction.response.send_message("Your approved Champions Circle application has been cancelled. The Champions role has been removed if it was assigned.", ephemeral=True)
+            else:
+                await interaction.response.send_message("Your Champions Circle application has been cancelled.", ephemeral=True)
         else:
             await interaction.response.send_message("You don't have an active Champions Circle application to cancel.", ephemeral=True)
         
-        await self.cog.update_embed(interaction.guild)
+        await self.cog.update_embed(guild)
 
 async def setup(bot):
     cog = ChampionsCircle(bot)
