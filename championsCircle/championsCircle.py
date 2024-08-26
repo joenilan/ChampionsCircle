@@ -23,6 +23,7 @@ class ChampionsCircle(commands.Cog):
                 "Rank:",
                 "Primary Platform (PC, Xbox, PlayStation, Switch):",
                 "Preferred Region for Matches (NA East, NA West, EU, Other - please specify if Other):",
+                "RL Tracker Link:",
                 "Have you read and understood the tournament rules? (Yes/No)",
                 "Do you agree to follow the tournament code of conduct? (Yes/No)",
                 "Any special requests or additional notes? (e.g., match scheduling preferences, etc)"
@@ -196,16 +197,44 @@ class ChampionsCircle(commands.Cog):
     async def update_embed(self, guild):
         embed = discord.Embed(title="Champions Circle Applications", description="Current applicants and their status.", color=0x00ff00)
         
-        active_list = "\n".join([f"<@{app['user_id']}>" for app in await self.config.guild(guild).active_applications()]) or "No active applications"
-        approved_list = "\n".join([f"<@{user_id}>" for user_id in await self.config.guild(guild).approved_applications()]) or "No approved applications"
-        denied_list = "\n".join([f"<@{user_id}>" for user_id in await self.config.guild(guild).denied_applications()]) or "No denied applications"
-        cancelled_list = "\n".join([f"<@{user_id}>" for user_id in await self.config.guild(guild).cancelled_applications()]) or "No cancelled applications"
+        async def format_user_entry(user_id, application_data):
+            user = guild.get_member(user_id)
+            if not user:
+                return f"<@{user_id}> (User left server)"
+            
+            rank = "Unranked"
+            tracker_link = ""
+            if isinstance(application_data, dict):
+                questions = await self.config.guild(guild).custom_questions()
+                rank_question = next((q for q in questions if q.lower().startswith("rank")), None)
+                tracker_question = next((q for q in questions if "tracker" in q.lower()), None)
+                
+                if rank_question and rank_question in application_data:
+                    rank = application_data[rank_question]
+                if tracker_question and tracker_question in application_data:
+                    tracker_link = application_data[tracker_question]
+            
+            if tracker_link:
+                return f"<@{user_id}> - [{rank}]({tracker_link})"
+            else:
+                return f"<@{user_id}> - {rank}"
+
+        active_applications = await self.config.guild(guild).active_applications()
+        active_list = "\n".join([await format_user_entry(app['user_id'], app.get('answers', {})) for app in active_applications]) or "No active applications"
         
-        embed.add_field(name="Active Applications", value=active_list, inline=True)
-        embed.add_field(name="Approved Applications", value=approved_list, inline=True)
-        embed.add_field(name="\u200b", value="\u200b", inline=True)  # Empty field for spacing
-        embed.add_field(name="Denied Applications", value=denied_list, inline=True)
-        embed.add_field(name="Cancelled Applications", value=cancelled_list, inline=True)
+        approved_applications = await self.config.guild(guild).approved_applications()
+        approved_list = "\n".join([await format_user_entry(user_id, {}) for user_id in approved_applications]) or "No approved applications"
+        
+        denied_applications = await self.config.guild(guild).denied_applications()
+        denied_list = "\n".join([await format_user_entry(user_id, {}) for user_id in denied_applications]) or "No denied applications"
+        
+        cancelled_applications = await self.config.guild(guild).cancelled_applications()
+        cancelled_list = "\n".join([await format_user_entry(user_id, {}) for user_id in cancelled_applications]) or "No cancelled applications"
+        
+        embed.add_field(name="Active Applications", value=active_list, inline=False)
+        embed.add_field(name="Approved Applications", value=approved_list, inline=False)
+        embed.add_field(name="Denied Applications", value=denied_list, inline=False)
+        embed.add_field(name="Cancelled Applications", value=cancelled_list, inline=False)
 
         channel = self.bot.get_channel(await self.config.guild(guild).champions_channel())
         if not channel:
@@ -456,7 +485,11 @@ class SubmitView(discord.ui.View):
             await self.cog.send_answers_to_admin(self.user, self.answers)
             active_applications = await self.cog.config.guild(guild).active_applications()
             if self.user.id not in [app["user_id"] for app in active_applications]:
-                active_applications.append({"user_id": self.user.id, "timestamp": datetime.now().timestamp()})
+                active_applications.append({
+                    "user_id": self.user.id,
+                    "timestamp": datetime.now().timestamp(),
+                    "answers": self.answers  # Store the answers
+                })
                 await self.cog.config.guild(guild).active_applications.set(active_applications)
             cancelled_applications = await self.cog.config.guild(guild).cancelled_applications()
             if self.user.id in cancelled_applications:
