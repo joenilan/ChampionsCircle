@@ -87,16 +87,20 @@ class ChampionsCircle(commands.Cog):
     @commands.command()
     @guild_only()
     async def list_champions(self, ctx):
-        active_applications = await self.config.guild(ctx.guild).active_applications()
-        if not active_applications:
+        approved_applications = await self.config.guild(ctx.guild).approved_applications()
+        if not approved_applications:
             await ctx.send("There are no champions yet!")
             return
 
         embed = discord.Embed(title="Champions Circle", description="Our esteemed champions:", color=0x00ff00)
-        for champion_id in active_applications:
+        for application in approved_applications:
+            champion_id = application['user_id']
             champion = ctx.guild.get_member(champion_id)
             if champion:
-                embed.add_field(name=champion.name, value=f"ID: {champion.id}", inline=False)
+                rank = application['answers'].get('Rank:', 'Unranked')
+                tracker_link = application['answers'].get('RL Tracker Link:', 'Not provided')
+                value = f"Rank: [{rank}]({tracker_link})" if tracker_link != 'Not provided' else f"Rank: {rank}"
+                embed.add_field(name=champion.name, value=value, inline=False)
 
         await ctx.send(embed=embed)
 
@@ -616,7 +620,13 @@ class JoinButton(discord.ui.Button):
         self.cog = cog
 
     async def callback(self, interaction: discord.Interaction):
-        bucket = self.cog.application_cooldowns.get_bucket(interaction.user)
+        # Create a dummy message object for cooldown purposes
+        class DummyMessage:
+            def __init__(self, author):
+                self.author = author
+
+        dummy_message = DummyMessage(interaction.user)
+        bucket = self.cog.application_cooldowns.get_bucket(dummy_message)
         retry_after = bucket.update_rate_limit()
         if retry_after:
             minutes, seconds = divmod(int(retry_after), 60)
