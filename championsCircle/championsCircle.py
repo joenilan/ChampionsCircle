@@ -27,7 +27,10 @@ class ChampionsCircle(commands.Cog):
                 "Have you read and understood the tournament rules? (Yes/No)",
                 "Do you agree to follow the tournament code of conduct? (Yes/No)",
                 "Any special requests or additional notes? (e.g., match scheduling preferences, etc)"
-            ]
+            ],
+            "tourney_title": "Champions Circle Tournament",
+            "tourney_description": "Join our exciting tournament!",
+            "tourney_time": None,  # We'll store this as a UTC timestamp
         }
         self.config.register_guild(**default_guild)
         self.logger = logging.getLogger("red.championsCircle")
@@ -199,7 +202,19 @@ class ChampionsCircle(commands.Cog):
         temp_msg = await channel.send("Tournament ended. Channel cleared, cog state reset, and application cooldowns reset. You can now use the starttourney command for a new tournament.", delete_after=10)
 
     async def update_embed(self, guild):
-        embed = discord.Embed(title="Champions Circle Applications", description="Current applicants and their status.", color=0x00ff00)
+        embed = discord.Embed(title="Champions Circle Tournament", color=0x00ff00)
+        
+        # Add tournament details
+        tourney_title = await self.config.guild(guild).tourney_title()
+        tourney_description = await self.config.guild(guild).tourney_description()
+        tourney_time = await self.config.guild(guild).tourney_time()
+        
+        embed.add_field(name="Tournament", value=tourney_title, inline=False)
+        embed.add_field(name="Description", value=tourney_description, inline=False)
+        
+        if tourney_time:
+            utc_time = datetime.fromtimestamp(tourney_time, tz=timezone.utc)
+            embed.add_field(name="Time", value=f"<t:{int(tourney_time)}:F>", inline=False)
         
         async def format_user_entry(application):
             user_id = application['user_id']
@@ -312,8 +327,7 @@ class ChampionsCircle(commands.Cog):
     async def close_expired_applications(self):
         """Close applications that have expired."""
         while self == self.bot.get_cog("ChampionsCircle"):
-            try:
-                all_guilds = await self.config.all_guilds()
+            try:                all_guilds = await self.config.all_guilds()
                 for guild_id, guild_data in all_guilds.items():
                     guild = self.bot.get_guild(guild_id)
                     if not guild:
@@ -382,6 +396,15 @@ class ChampionsCircle(commands.Cog):
         embed.add_field(name="Champions Channel", value=champions_channel.mention if champions_channel else "Not set", inline=False)
         embed.add_field(name="Champions Role", value=champions_role.mention if champions_role else "Not set", inline=False)
         embed.add_field(name="Application Duration", value=f"{settings['application_duration']} days", inline=False)
+        embed.add_field(name="Tournament Title", value=settings['tourney_title'], inline=False)
+        embed.add_field(name="Tournament Description", value=settings['tourney_description'], inline=False)
+        
+        if settings['tourney_time']:
+            utc_time = datetime.fromtimestamp(settings['tourney_time'], tz=timezone.utc)
+            embed.add_field(name="Tournament Time", value=f"<t:{int(settings['tourney_time'])}:F>", inline=False)
+        else:
+            embed.add_field(name="Tournament Time", value="Not set", inline=False)
+        
         embed.add_field(name="Active Applications", value=len(settings['active_applications']), inline=True)
         embed.add_field(name="Approved Applications", value=len(settings['approved_applications']), inline=True)
         embed.add_field(name="Denied Applications", value=len(settings['denied_applications']), inline=True)
@@ -432,6 +455,40 @@ class ChampionsCircle(commands.Cog):
                 await ctx.send("No custom questions set.")
         except AttributeError:
             await ctx.send("This command can only be used in a server.")
+
+    @commands.group()
+    @commands.admin_or_permissions(administrator=True)
+    @guild_only()
+    async def tourney(self, ctx):
+        """Manage tournament details."""
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
+
+    @tourney.command(name="settitle")
+    async def set_tourney_title(self, ctx, *, title: str):
+        """Set the tournament title."""
+        await self.config.guild(ctx.guild).tourney_title.set(title)
+        await ctx.send(f"Tournament title set to: {title}")
+        await self.update_embed(ctx.guild)
+
+    @tourney.command(name="setdescription")
+    async def set_tourney_description(self, ctx, *, description: str):
+        """Set the tournament description."""
+        await self.config.guild(ctx.guild).tourney_description.set(description)
+        await ctx.send(f"Tournament description set to: {description}")
+        await self.update_embed(ctx.guild)
+
+    @tourney.command(name="settime")
+    async def set_tourney_time(self, ctx, *, time: str):
+        """Set the tournament time (format: YYYY-MM-DD HH:MM)."""
+        try:
+            tourney_time = datetime.strptime(time, "%Y-%m-%d %H:%M")
+            timestamp = tourney_time.replace(tzinfo=timezone.utc).timestamp()
+            await self.config.guild(ctx.guild).tourney_time.set(timestamp)
+            await ctx.send(f"Tournament time set to: {tourney_time} UTC")
+            await self.update_embed(ctx.guild)
+        except ValueError:
+            await ctx.send("Invalid time format. Please use YYYY-MM-DD HH:MM")
 
 class QuestionnaireView(discord.ui.View):
     def __init__(self, cog, user):
@@ -521,6 +578,7 @@ class SubmitView(discord.ui.View):
                 await self.cog.config.guild(guild).cancelled_applications.set(cancelled_applications)
             await self.cog.update_embed(guild)
         self.stop()
+
 class AdminResponseView(discord.ui.View):
     def __init__(self, cog, applicant_id, guild_id):
         super().__init__()
