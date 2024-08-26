@@ -213,8 +213,7 @@ class ChampionsCircle(commands.Cog):
         embed.add_field(name="Description", value=tourney_description, inline=False)
         
         if tourney_time:
-            utc_time = datetime.fromtimestamp(tourney_time, tz=timezone.utc)
-            embed.add_field(name="Time", value=f"<t:{int(tourney_time)}:F>", inline=False)
+            embed.add_field(name="Time", value=f"<t:{tourney_time}:F>", inline=False)
         
         async def format_user_entry(application):
             user_id = application['user_id']
@@ -327,7 +326,8 @@ class ChampionsCircle(commands.Cog):
     async def close_expired_applications(self):
         """Close applications that have expired."""
         while self == self.bot.get_cog("ChampionsCircle"):
-            try:                all_guilds = await self.config.all_guilds()
+            try:
+                all_guilds = await self.config.all_guilds()
                 for guild_id, guild_data in all_guilds.items():
                     guild = self.bot.get_guild(guild_id)
                     if not guild:
@@ -400,8 +400,7 @@ class ChampionsCircle(commands.Cog):
         embed.add_field(name="Tournament Description", value=settings['tourney_description'], inline=False)
         
         if settings['tourney_time']:
-            utc_time = datetime.fromtimestamp(settings['tourney_time'], tz=timezone.utc)
-            embed.add_field(name="Tournament Time", value=f"<t:{int(settings['tourney_time'])}:F>", inline=False)
+            embed.add_field(name="Tournament Time", value=f"<t:{settings['tourney_time']}:F>", inline=False)
         else:
             embed.add_field(name="Tournament Time", value="Not set", inline=False)
         
@@ -483,9 +482,9 @@ class ChampionsCircle(commands.Cog):
         """Set the tournament time (format: YYYY-MM-DD HH:MM)."""
         try:
             tourney_time = datetime.strptime(time, "%Y-%m-%d %H:%M")
-            timestamp = tourney_time.replace(tzinfo=timezone.utc).timestamp()
+            timestamp = int(tourney_time.replace(tzinfo=timezone.utc).timestamp())
             await self.config.guild(ctx.guild).tourney_time.set(timestamp)
-            await ctx.send(f"Tournament time set to: {tourney_time} UTC")
+            await ctx.send(f"Tournament time set to: <t:{timestamp}:F>")
             await self.update_embed(ctx.guild)
         except ValueError:
             await ctx.send("Invalid time format. Please use YYYY-MM-DD HH:MM")
