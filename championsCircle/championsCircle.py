@@ -342,9 +342,6 @@ class ChampionsCircle(commands.Cog):
         await ctx.send(embed=embed)
 
     async def fetch_rocket_league_stats(self, epic_id: str):
-        vdisplay = Xvfb()
-        vdisplay.start()
-        
         chrome_options = Options()
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--no-sandbox")
@@ -356,16 +353,12 @@ class ChampionsCircle(commands.Cog):
             url = f"https://api.tracker.gg/api/v2/rocket-league/standard/profile/epic/{epic_id}"
             driver.get(url)
 
-            # Wait for the content to load
-            WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located((By.TAG_NAME, "pre"))
-            )
+            # Get the page source (which should be just the JSON)
+            json_content = driver.page_source
 
-            # Extract the JSON content
-            json_content = driver.find_element(By.TAG_NAME, "pre").text
+            # Parse the JSON content
             data = json.loads(json_content)
 
-            # Parse the data as needed
             if 'data' in data:
                 player_data = data['data']
                 segments = player_data.get('segments', [])
@@ -397,12 +390,13 @@ class ChampionsCircle(commands.Cog):
             else:
                 return {"error": "Unable to find player data"}
 
+        except json.JSONDecodeError:
+            return {"error": "Failed to parse JSON data"}
         except Exception as e:
             self.logger.error(f"Error fetching Rocket League stats: {str(e)}")
             return {"error": f"An error occurred: {str(e)}"}
         finally:
             driver.quit()
-            vdisplay.stop()
 
 class QuestionnaireView(discord.ui.View):
     def __init__(self, cog, user):
