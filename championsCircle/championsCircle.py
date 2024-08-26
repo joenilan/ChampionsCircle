@@ -3,7 +3,7 @@ from redbot.core import commands, Config
 from discord.ext.commands import guild_only
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 class ChampionsCircle(commands.Cog):
     def __init__(self, bot):
