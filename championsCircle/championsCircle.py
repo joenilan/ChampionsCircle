@@ -584,9 +584,8 @@ class JoinButton(discord.ui.Button):
             await interaction.response.send_message("You already have an active application for the Champions Circle.", ephemeral=True)
             return
 
-        await interaction.response.send_message("Great! Let's start your application process.", ephemeral=True)
         view = QuestionnaireView(self.cog, interaction.user)
-        await interaction.followup.send("Click the button below to start the questionnaire:", view=view, ephemeral=True)
+        await interaction.response.send_message("Great! Let's start your application process. Click the button below to begin the questionnaire:", view=view, ephemeral=True)
 
 class CancelApplicationButton(discord.ui.Button):
     def __init__(self, cog):
