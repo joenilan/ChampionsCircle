@@ -355,16 +355,15 @@ class ChampionsCircle(commands.Cog):
             await asyncio.sleep(3600)  # Check every hour
 
     @commands.command()
-    @guild_only()
     async def cchelp(self, ctx):
-        """Display help information for the Champions Circle cog."""
-        embed = discord.Embed(title="Champions Circle Help", description="Commands and information for the Champions Circle cog", color=0x00ff00)
+        """Display help for Champions Circle commands."""
+        embed = discord.Embed(title="Champions Circle Help", color=0x00ff00)
         
-        # User commands
-        embed.add_field(name="User Commands", value="\u200b", inline=False)
-        embed.add_field(name="cancel_application", value="Cancel your active Champions Circle application", inline=False)
+        # General commands
+        embed.add_field(name="General Commands", value="\u200b", inline=False)
+        embed.add_field(name="cchelp", value="Display this help message", inline=False)
         embed.add_field(name="list_champions", value="List current champions", inline=False)
-        
+
         # Admin commands
         embed.add_field(name="Admin Commands", value="\u200b", inline=False)
         embed.add_field(name="starttourney", value="Start a new tournament and set up the join button for Champions Circle applications", inline=False)
@@ -375,6 +374,15 @@ class ChampionsCircle(commands.Cog):
         embed.add_field(name="clearall", value="Clear all messages in the Champions Circle channel", inline=False)
         embed.add_field(name="test_role_assign", value="Test role assignment", inline=False)
         embed.add_field(name="championssettings", value="Display current settings for the Champions Circle cog", inline=False)
+
+        # Tournament management commands
+        embed.add_field(name="Tournament Management", value="\u200b", inline=False)
+        embed.add_field(name="tourney settitle", value="Set the tournament title", inline=False)
+        embed.add_field(name="tourney setdescription", value="Set the tournament description", inline=False)
+        embed.add_field(name="tourney settime", value="Set the tournament time (format: YYYY-MM-DD HH:MM)", inline=False)
+
+        # Question management commands
+        embed.add_field(name="Question Management", value="\u200b", inline=False)
         embed.add_field(name="questions add", value="Add a custom question to the Champions Circle application", inline=False)
         embed.add_field(name="questions remove", value="Remove a custom question from the Champions Circle application", inline=False)
         embed.add_field(name="questions list", value="List all custom questions for the Champions Circle application", inline=False)
@@ -489,6 +497,15 @@ class ChampionsCircle(commands.Cog):
             await self.update_embed(ctx.guild)
         except ValueError:
             await ctx.send("Invalid time format. Please use YYYY-MM-DD HH:MM")
+
+    @tourney.command(name="help")
+    async def tourney_help(self, ctx):
+        """Display help for tourney commands."""
+        embed = discord.Embed(title="Tournament Management Commands", color=0x00ff00)
+        embed.add_field(name="tourney settitle", value="Set the tournament title", inline=False)
+        embed.add_field(name="tourney setdescription", value="Set the tournament description", inline=False)
+        embed.add_field(name="tourney settime", value="Set the tournament time (format: YYYY-MM-DD HH:MM)", inline=False)
+        await ctx.send(embed=embed)
 
 class QuestionnaireView(discord.ui.View):
     def __init__(self, cog, user):
