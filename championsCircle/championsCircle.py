@@ -197,22 +197,23 @@ class ChampionsCircle(commands.Cog):
     async def update_embed(self, guild):
         embed = discord.Embed(title="Champions Circle Applications", description="Current applicants and their status.", color=0x00ff00)
         
-        async def format_user_entry(user_id, application_data):
+        async def format_user_entry(application):
+            user_id = application['user_id']
             user = guild.get_member(user_id)
             if not user:
                 return f"<@{user_id}> (User left server)"
             
             rank = "Unranked"
             tracker_link = ""
-            if isinstance(application_data, dict):
+            if 'answers' in application:
                 questions = await self.config.guild(guild).custom_questions()
                 rank_question = next((q for q in questions if q.lower().startswith("rank")), None)
                 tracker_question = next((q for q in questions if "tracker" in q.lower()), None)
                 
-                if rank_question and rank_question in application_data:
-                    rank = application_data[rank_question]
-                if tracker_question and tracker_question in application_data:
-                    tracker_link = application_data[tracker_question]
+                if rank_question and rank_question in application['answers']:
+                    rank = application['answers'][rank_question]
+                if tracker_question and tracker_question in application['answers']:
+                    tracker_link = application['answers'][tracker_question]
             
             if tracker_link:
                 return f"<@{user_id}> - [{rank}]({tracker_link})"
@@ -220,16 +221,16 @@ class ChampionsCircle(commands.Cog):
                 return f"<@{user_id}> - {rank}"
 
         active_applications = await self.config.guild(guild).active_applications()
-        active_list = "\n".join([await format_user_entry(app['user_id'], app.get('answers', {})) for app in active_applications]) or "No active applications"
+        active_list = "\n".join([await format_user_entry(app) for app in active_applications]) or "No active applications"
         
         approved_applications = await self.config.guild(guild).approved_applications()
-        approved_list = "\n".join([await format_user_entry(user_id, {}) for user_id in approved_applications]) or "No approved applications"
+        approved_list = "\n".join([await format_user_entry(app) for app in approved_applications]) or "No approved applications"
         
         denied_applications = await self.config.guild(guild).denied_applications()
-        denied_list = "\n".join([await format_user_entry(user_id, {}) for user_id in denied_applications]) or "No denied applications"
+        denied_list = "\n".join([await format_user_entry(app) for app in denied_applications]) or "No denied applications"
         
         cancelled_applications = await self.config.guild(guild).cancelled_applications()
-        cancelled_list = "\n".join([await format_user_entry(user_id, {}) for user_id in cancelled_applications]) or "No cancelled applications"
+        cancelled_list = "\n".join([await format_user_entry(app) for app in cancelled_applications]) or "No cancelled applications"
         
         embed.add_field(name="🟦 Active Applications", value=active_list, inline=False)
         embed.add_field(name="🟩 Approved Applications", value=approved_list, inline=False)
@@ -516,7 +517,6 @@ class SubmitView(discord.ui.View):
                 await self.cog.config.guild(guild).cancelled_applications.set(cancelled_applications)
             await self.cog.update_embed(guild)
         self.stop()
-
 class AdminResponseView(discord.ui.View):
     def __init__(self, cog, applicant_id, guild_id):
         super().__init__()
@@ -531,7 +531,7 @@ class AdminResponseView(discord.ui.View):
 
         for list_name in ['approved_applications', 'denied_applications', 'cancelled_applications']:
             current_list = await self.cog.config.guild(guild).get_raw(list_name)
-            current_list = [user_id for user_id in current_list if user_id != self.applicant_id]
+            current_list = [app for app in current_list if app['user_id'] != self.applicant_id]
             await self.cog.config.guild(guild).set_raw(list_name, value=current_list)
 
     @discord.ui.button(label="Approve", style=discord.ButtonStyle.green)
@@ -546,10 +546,15 @@ class AdminResponseView(discord.ui.View):
 
             await self.remove_from_all_lists(guild)
             
-            approved_applications = await self.cog.config.guild(guild).approved_applications()
-            if self.applicant_id not in approved_applications:
-                approved_applications.append(self.applicant_id)
+            active_applications = await self.cog.config.guild(guild).active_applications()
+            application = next((app for app in active_applications if app['user_id'] == self.applicant_id), None)
+            if application:
+                approved_applications = await self.cog.config.guild(guild).approved_applications()
+                approved_applications.append(application)
                 await self.cog.config.guild(guild).approved_applications.set(approved_applications)
+                
+                active_applications = [app for app in active_applications if app['user_id'] != self.applicant_id]
+                await self.cog.config.guild(guild).active_applications.set(active_applications)
             
             await self.cog.update_embed(guild)
             
@@ -582,10 +587,15 @@ class AdminResponseView(discord.ui.View):
 
             await self.remove_from_all_lists(guild)
             
-            denied_applications = await self.cog.config.guild(guild).denied_applications()
-            if self.applicant_id not in denied_applications:
-                denied_applications.append(self.applicant_id)
+            active_applications = await self.cog.config.guild(guild).active_applications()
+            application = next((app for app in active_applications if app['user_id'] == self.applicant_id), None)
+            if application:
+                denied_applications = await self.cog.config.guild(guild).denied_applications()
+                denied_applications.append(application)
                 await self.cog.config.guild(guild).denied_applications.set(denied_applications)
+                
+                active_applications = [app for app in active_applications if app['user_id'] != self.applicant_id]
+                await self.cog.config.guild(guild).active_applications.set(active_applications)
             
             await self.cog.update_embed(guild)
             
@@ -606,7 +616,7 @@ class JoinButton(discord.ui.Button):
         self.cog = cog
 
     async def callback(self, interaction: discord.Interaction):
-        bucket = self.cog.application_cooldowns.get_bucket(interaction.message)
+        bucket = self.cog.application_cooldowns.get_bucket(interaction.user)
         retry_after = bucket.update_rate_limit()
         if retry_after:
             minutes, seconds = divmod(int(retry_after), 60)
@@ -628,10 +638,11 @@ class CancelApplicationButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         user_id = interaction.user.id
         active_applications = await self.cog.config.guild(interaction.guild).active_applications()
-        if user_id in active_applications:
-            active_applications = [app for app in active_applications if app["user_id"] != user_id]
+        application = next((app for app in active_applications if app['user_id'] == user_id), None)
+        if application:
+            active_applications = [app for app in active_applications if app['user_id'] != user_id]
             cancelled_applications = await self.cog.config.guild(interaction.guild).cancelled_applications()
-            cancelled_applications.append(user_id)
+            cancelled_applications.append(application)
             await self.cog.config.guild(interaction.guild).active_applications.set(active_applications)
             await self.cog.config.guild(interaction.guild).cancelled_applications.set(cancelled_applications)
             await interaction.response.send_message("Your active Champions Circle application has been cancelled.", ephemeral=True)
