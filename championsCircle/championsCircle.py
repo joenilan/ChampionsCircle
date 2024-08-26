@@ -354,6 +354,7 @@ class ChampionsCircle(commands.Cog):
             await ctx.send_help(ctx.command)
 
     @questions.command(name="add")
+    @guild_only()
     async def add_question(self, ctx, *, question: str):
         """Add a custom question to the Champions Circle application."""
         async with self.config.guild(ctx.guild).custom_questions() as questions:
@@ -361,6 +362,26 @@ class ChampionsCircle(commands.Cog):
         await ctx.send(f"Question added: {question}")
 
     @questions.command(name="remove")
+    @guild_only()
+    async def remove_question(self, ctx, index: int):
+        """Remove a custom question from the Champions Circle application."""
+        async with self.config.guild(ctx.guild).custom_questions() as questions:
+            if 1 <= index <= len(questions):
+                removed_question = questions.pop(index - 1)
+                await ctx.send(f"Question removed: {removed_question}")
+            else:
+                await ctx.send("Invalid question index.")
+
+    @questions.command(name="add")
+    @guild_only()
+    async def add_question(self, ctx, *, question: str):
+        """Add a custom question to the Champions Circle application."""
+        async with self.config.guild(ctx.guild).custom_questions() as questions:
+            questions.append(question)
+        await ctx.send(f"Question added: {question}")
+
+    @questions.command(name="remove")
+    @guild_only()
     async def remove_question(self, ctx, index: int):
         """Remove a custom question from the Champions Circle application."""
         async with self.config.guild(ctx.guild).custom_questions() as questions:
@@ -371,14 +392,18 @@ class ChampionsCircle(commands.Cog):
                 await ctx.send("Invalid question index.")
 
     @questions.command(name="list")
+    @guild_only()
     async def list_questions(self, ctx):
         """List all custom questions for the Champions Circle application."""
-        questions = await self.config.guild(ctx.guild).custom_questions()
-        if questions:
-            question_list = "\n".join(f"{i+1}. {q}" for i, q in enumerate(questions))
-            await ctx.send(f"Current custom questions:\n{question_list}")
-        else:
-            await ctx.send("No custom questions set.")
+        try:
+            questions = await self.config.guild(ctx.guild).custom_questions()
+            if questions:
+                question_list = "\n".join(f"{i+1}. {q}" for i, q in enumerate(questions))
+                await ctx.send(f"Current custom questions:\n{question_list}")
+            else:
+                await ctx.send("No custom questions set.")
+        except AttributeError:
+            await ctx.send("This command can only be used in a server.")
 
 class QuestionnaireView(discord.ui.View):
     def __init__(self, cog, user):
