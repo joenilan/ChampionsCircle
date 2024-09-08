@@ -24,16 +24,24 @@ class DayPass(commands.Cog):
             await ctx.send_help(ctx.command)
 
     @daypass.command(name="setrole")
-    async def set_daypass_role(self, ctx, role: discord.Role):
-        """Set the role to be used for DayPass."""
-        await self.config.guild(ctx.guild).daypass_role_id.set(role.id)
-        await ctx.send(f"DayPass role set to {role.name}")
+    async def set_daypass_role(self, ctx, role_id: int):
+        """Set the role to be used for DayPass using its ID."""
+        role = ctx.guild.get_role(role_id)
+        if not role:
+            await ctx.send(f"No role found with ID {role_id}. Please check the ID and try again.")
+            return
+        await self.config.guild(ctx.guild).daypass_role_id.set(role_id)
+        await ctx.send(f"DayPass role set to {role.name} (ID: {role_id})")
 
     @daypass.command(name="setchannel")
-    async def set_daypass_channel(self, ctx, channel: discord.TextChannel):
-        """Set the channel to be used for DayPass."""
-        await self.config.guild(ctx.guild).daypass_channel_id.set(channel.id)
-        await ctx.send(f"DayPass channel set to {channel.mention}")
+    async def set_daypass_channel(self, ctx, channel_id: int):
+        """Set the channel to be used for DayPass using its ID."""
+        channel = ctx.guild.get_channel(channel_id)
+        if not channel:
+            await ctx.send(f"No channel found with ID {channel_id}. Please check the ID and try again.")
+            return
+        await self.config.guild(ctx.guild).daypass_channel_id.set(channel_id)
+        await ctx.send(f"DayPass channel set to {channel.name} (ID: {channel_id})")
 
     @daypass.command(name="grant")
     async def grant_daypass(self, ctx, member: discord.Member, duration: int):
