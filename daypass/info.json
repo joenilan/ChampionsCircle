@@ -1,0 +1,14 @@
+{
+    "name": "DayPass",
+    "short": "A cog for managing temporary role access",
+    "description": "This cog allows administrators to give users temporary access to a role and specific channels.",
+    "end_user_data_statement": "This cog stores Discord user IDs for members with temporary role access.",
+    "author": ["YourName"],
+    "required_cogs": {},
+    "requirements": [],
+    "tags": ["daypass", "role", "temporary"],
+    "min_bot_version": "3.5.0",
+    "hidden": false,
+    "disabled": false,
+    "type": "COG"
+}
