@@ -79,6 +79,44 @@ class DayPass(commands.Cog):
         await ctx.send(f"DayPass granted to {member.mention} for {duration_str}.")
         self.bot.loop.create_task(self.remove_daypass(ctx.guild, member, role, channel, duration_seconds))
 
+    @daypass.command(name="setduration")
+    async def set_daypass_duration(self, ctx, member: discord.Member, *, duration: str):
+        """
+        Set the duration for a user who already has the DayPass role.
+        Use format: 1d2h3m4s for 1 day, 2 hours, 3 minutes, and 4 seconds.
+        """
+        role_id = await self.config.guild(ctx.guild).daypass_role_id()
+        channel_id = await self.config.guild(ctx.guild).daypass_channel_id()
+
+        if not role_id or not channel_id:
+            await ctx.send("DayPass role or channel has not been set. Please set them first.")
+            return
+
+        role = ctx.guild.get_role(role_id)
+        channel = ctx.guild.get_channel(channel_id)
+
+        if not role or not channel:
+            await ctx.send("DayPass role or channel not found. Please check the settings.")
+            return
+
+        if role not in member.roles:
+            await ctx.send(f"{member.mention} does not have the DayPass role. Use the 'grant' command instead.")
+            return
+
+        duration_seconds = self.parse_duration(duration)
+        if duration_seconds == 0:
+            await ctx.send("Invalid duration format. Use combinations like 1d, 2h, 30m, 45s.")
+            return
+
+        expiry_time = datetime.utcnow() + timedelta(seconds=duration_seconds)
+
+        async with self.config.guild(ctx.guild).active_passes() as active_passes:
+            active_passes[str(member.id)] = expiry_time.timestamp()
+
+        duration_str = self.format_duration(duration_seconds)
+        await ctx.send(f"DayPass duration set for {member.mention} to {duration_str}.")
+        self.bot.loop.create_task(self.remove_daypass(ctx.guild, member, role, channel, duration_seconds))
+
     def parse_duration(self, duration_str):
         """Parse a duration string into seconds."""
         units = {
@@ -112,9 +150,13 @@ class DayPass(commands.Cog):
 
     async def remove_daypass(self, guild, member, role, channel, duration_seconds):
         await asyncio.sleep(duration_seconds)
-        if role in member.roles:
-            await member.remove_roles(role)
-            await channel.send(f"{member.mention}'s DayPass has expired.")
+        if member and role in member.roles:
+            try:
+                await member.remove_roles(role)
+                await channel.send(f"{member.mention}'s DayPass has expired.")
+            except discord.HTTPException:
+                # Handle the case where the bot can't remove the role
+                await channel.send(f"Failed to remove DayPass role from {member.mention}. Please remove it manually.")
 
         async with self.config.guild(guild).active_passes() as active_passes:
             active_passes.pop(str(member.id), None)
@@ -136,10 +178,38 @@ class DayPass(commands.Cog):
         if not role or not channel:
             return
 
-        if role in before.roles and role not in after.roles:
+        # Check if the DayPass role was added
+        if role not in before.roles and role in after.roles:
+            # DayPass role was added
+            duration_seconds = 12 * 3600  # 12 hours in seconds
+            expiry_time = datetime.utcnow() + timedelta(seconds=duration_seconds)
+
+            async with self.config.guild(after.guild).active_passes() as active_passes:
+                active_passes[str(after.id)] = expiry_time.timestamp()
+
+            # Send DM to the user
+            try:
+                await after.send(f"You have been granted a DayPass in {after.guild.name} for 12 hours. "
+                                 f"Your access will expire at {expiry_time.strftime('%Y-%m-%d %H:%M:%S UTC')}.")
+            except discord.HTTPException:
+                # If DM fails, log it or handle it as needed
+                pass
+
+            # Start the task to remove the role after the duration
+            self.bot.loop.create_task(self.remove_daypass(after.guild, after, role, channel, duration_seconds))
+
+        # Check if the DayPass role was removed
+        elif role in before.roles and role not in after.roles:
+            # DayPass role was removed
             async with self.config.guild(after.guild).active_passes() as active_passes:
                 active_passes.pop(str(after.id), None)
-            await channel.send(f"{after.mention}'s DayPass has been manually removed.")
+            
+            # Send DM to the user
+            try:
+                await after.send(f"Your DayPass in {after.guild.name} has been manually removed.")
+            except discord.HTTPException:
+                # If DM fails, log it or handle it as needed
+                pass
 
     @commands.Cog.listener()
     async def on_member_remove(self, member):
