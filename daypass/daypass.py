@@ -3,6 +3,7 @@ from redbot.core import commands, Config
 from discord.ext.commands import guild_only
 import asyncio
 from datetime import datetime, timedelta
+import re
 
 class DayPass(commands.Cog):
     def __init__(self, bot):
@@ -44,8 +45,16 @@ class DayPass(commands.Cog):
         await ctx.send(f"DayPass channel set to {channel.name} (ID: {channel_id})")
 
     @daypass.command(name="grant")
-    async def grant_daypass(self, ctx, member: discord.Member, duration: int):
-        """Grant a DayPass to a user for a specified duration (in hours)."""
+    async def grant_daypass(self, ctx, member: discord.Member, *, duration: str):
+        """
+        Grant a DayPass to a user for a specified duration.
+        Use format: 1d2h3m4s for 1 day, 2 hours, 3 minutes, and 4 seconds.
+        """
+        duration_seconds = self.parse_duration(duration)
+        if duration_seconds == 0:
+            await ctx.send("Invalid duration format. Use combinations like 1d, 2h, 30m, 45s.")
+            return
+
         role_id = await self.config.guild(ctx.guild).daypass_role_id()
         channel_id = await self.config.guild(ctx.guild).daypass_channel_id()
 
@@ -61,16 +70,48 @@ class DayPass(commands.Cog):
             return
 
         await member.add_roles(role)
-        expiry_time = datetime.utcnow() + timedelta(hours=duration)
+        expiry_time = datetime.utcnow() + timedelta(seconds=duration_seconds)
 
         async with self.config.guild(ctx.guild).active_passes() as active_passes:
             active_passes[str(member.id)] = expiry_time.timestamp()
 
-        await ctx.send(f"DayPass granted to {member.mention} for {duration} hours.")
-        self.bot.loop.create_task(self.remove_daypass(ctx.guild, member, role, channel, duration))
+        duration_str = self.format_duration(duration_seconds)
+        await ctx.send(f"DayPass granted to {member.mention} for {duration_str}.")
+        self.bot.loop.create_task(self.remove_daypass(ctx.guild, member, role, channel, duration_seconds))
 
-    async def remove_daypass(self, guild, member, role, channel, duration):
-        await asyncio.sleep(duration * 3600)  # Convert hours to seconds
+    def parse_duration(self, duration_str):
+        """Parse a duration string into seconds."""
+        units = {
+            's': 1,
+            'm': 60,
+            'h': 3600,
+            'd': 86400
+        }
+        pattern = re.compile(r'(\d+)([smhd])')
+        matches = pattern.findall(duration_str.lower())
+        total_seconds = 0
+        for value, unit in matches:
+            total_seconds += int(value) * units[unit]
+        return total_seconds
+
+    def format_duration(self, seconds):
+        """Format a duration in seconds to a human-readable string."""
+        days, remainder = divmod(seconds, 86400)
+        hours, remainder = divmod(remainder, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        parts = []
+        if days > 0:
+            parts.append(f"{days}d")
+        if hours > 0:
+            parts.append(f"{hours}h")
+        if minutes > 0:
+            parts.append(f"{minutes}m")
+        if seconds > 0 or not parts:
+            parts.append(f"{seconds}s")
+        return " ".join(parts)
+
+    async def remove_daypass(self, guild, member, role, channel, duration_seconds):
+        await asyncio.sleep(duration_seconds)
         if role in member.roles:
             await member.remove_roles(role)
             await channel.send(f"{member.mention}'s DayPass has expired.")
