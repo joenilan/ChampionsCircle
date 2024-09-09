@@ -1,0 +1,8 @@
+{
+    "author": ["joenilan"],
+    "description": "A cog that allows sending custom embeds via DM to users.",
+    "install_msg": "Thanks for installing the CustomEmbedDM cog! Use `[p]help dm` to see how to use it.",
+    "short": "Send custom embeds via DM",
+    "tags": ["dm", "embed", "message"],
+    "type": "COG"
+}
