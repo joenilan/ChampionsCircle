@@ -57,19 +57,19 @@ class CustomEmbedDM(commands.Cog):
             color=await guild_config.embed_color()
         )
         
-        image_url = None
         if ctx.message.attachments:
             attachment = ctx.message.attachments[0]
             if attachment.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
-                image_url = attachment.url
+                embed.set_image(url=attachment.url)
             else:
                 await ctx.send("The attached file is not a supported image format. Using the configured image URL instead.")
-        
-        if not image_url:
+                image_url = await guild_config.embed_image_url()
+                if image_url:
+                    embed.set_image(url=image_url)
+        else:
             image_url = await guild_config.embed_image_url()
-        
-        if image_url:
-            embed.set_image(url=image_url)
+            if image_url:
+                embed.set_image(url=image_url)
         
         if message:
             embed.add_field(name="Additional Message", value=message, inline=False)
