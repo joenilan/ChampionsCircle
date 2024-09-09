@@ -47,35 +47,52 @@ class CustomEmbedDM(commands.Cog):
 
     @commands.command()
     @commands.guild_only()
-    async def sendembed(self, ctx, user: discord.Member, *, message: Optional[str] = None):
-        """Send the configured embed to a user via DM. Optionally attach an image."""
+    async def sendembed(self, ctx, user: discord.Member, *, content: str):
+        """Send a customized embed to a user via DM.
+        Format: Title | Description | Image URL | Message
+        Use 'default' for any field to use the configured value.
+        Attach an image to override the Image URL field."""
         guild_config = self.config.guild(ctx.guild)
         
+        # Split the content into parts
+        parts = [part.strip() for part in content.split('|', 3)]
+        while len(parts) < 4:
+            parts.append('default')
+        
+        title, description, image_url, message = parts
+        
+        # Use configured values for 'default' fields
+        if title == 'default':
+            title = await guild_config.embed_title()
+        if description == 'default':
+            description = await guild_config.embed_description()
+        if image_url == 'default':
+            image_url = await guild_config.embed_image_url()
+        
         embed = discord.Embed(
-            title=await guild_config.embed_title(),
-            description=await guild_config.embed_description(),
+            title=title,
+            description=description,
             color=await guild_config.embed_color()
         )
         
+        # Handle image
         if ctx.message.attachments:
             attachment = ctx.message.attachments[0]
             if attachment.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
                 embed.set_image(url=attachment.url)
             else:
-                await ctx.send("The attached file is not a supported image format. Using the configured image URL instead.")
-                image_url = await guild_config.embed_image_url()
+                await ctx.send("The attached file is not a supported image format. Using the provided or configured image URL instead.")
                 if image_url:
                     embed.set_image(url=image_url)
-        else:
-            image_url = await guild_config.embed_image_url()
-            if image_url:
-                embed.set_image(url=image_url)
+        elif image_url and image_url != 'default':
+            embed.set_image(url=image_url)
         
-        if message:
+        # Add message field if provided
+        if message and message != 'default':
             embed.add_field(name="Additional Message", value=message, inline=False)
 
         try:
             await user.send(embed=embed)
-            await ctx.send(f"Embed sent to {user.mention} via DM.")
+            await ctx.send(f"Customized embed sent to {user.mention} via DM.")
         except discord.Forbidden:
             await ctx.send(f"I couldn't send a DM to {user.mention}. They might have DMs disabled.")
