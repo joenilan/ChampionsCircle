@@ -48,7 +48,7 @@ class CustomEmbedDM(commands.Cog):
     @commands.command()
     @commands.guild_only()
     async def sendembed(self, ctx, user: discord.Member, *, message: Optional[str] = None):
-        """Send the configured embed to a user via DM."""
+        """Send the configured embed to a user via DM. Optionally attach an image."""
         guild_config = self.config.guild(ctx.guild)
         
         embed = discord.Embed(
@@ -57,7 +57,17 @@ class CustomEmbedDM(commands.Cog):
             color=await guild_config.embed_color()
         )
         
-        image_url = await guild_config.embed_image_url()
+        image_url = None
+        if ctx.message.attachments:
+            attachment = ctx.message.attachments[0]
+            if attachment.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
+                image_url = attachment.url
+            else:
+                await ctx.send("The attached file is not a supported image format. Using the configured image URL instead.")
+        
+        if not image_url:
+            image_url = await guild_config.embed_image_url()
+        
         if image_url:
             embed.set_image(url=image_url)
         
