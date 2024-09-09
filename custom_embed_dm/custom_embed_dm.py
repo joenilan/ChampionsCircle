@@ -49,18 +49,17 @@ class CustomEmbedDM(commands.Cog):
     @commands.guild_only()
     async def sendembed(self, ctx, user: discord.Member, *, content: str):
         """Send a customized embed to a user via DM.
-        Format: Title | Description | [Custom message] | [before/after] | [IMAGE]
+        Format: Title | Description | [Custom message] | [IMAGE]
         Use 'default' for title or description to use the configured value.
         Place IMAGE where you want the image to appear in the embed.
         Attach an image or use a URL in place of IMAGE."""
         guild_config = self.config.guild(ctx.guild)
         
         # Split the content into parts
-        parts = [part.strip() for part in content.split('|', 4)]
-        while len(parts) < 5:
-            parts.append('')
+        parts = [part.strip() for part in content.split('|')]
         
-        title, description, message, position, image_placeholder = parts
+        title = parts[0] if parts else 'default'
+        description = parts[1] if len(parts) > 1 else 'default'
         
         # Use configured values for 'default' fields
         if title == 'default':
@@ -82,15 +81,17 @@ class CustomEmbedDM(commands.Cog):
                 image_url = attachment.url
             else:
                 await ctx.send("The attached file is not a supported image format.")
-        elif image_placeholder.startswith('http'):
-            image_url = image_placeholder
         
-        # Add elements to the embed in the specified order
-        for part in parts[2:]:  # Start from the third part (message)
+        # Process the remaining parts
+        for part in parts[2:]:
             if part.upper() == 'IMAGE':
                 if image_url:
                     embed.set_image(url=image_url)
-            elif part and part not in ['before', 'after']:
+                elif await guild_config.embed_image_url():
+                    embed.set_image(url=await guild_config.embed_image_url())
+            elif part.startswith('http') and not image_url:
+                embed.set_image(url=part)
+            else:
                 embed.add_field(name="Additional Message", value=part, inline=False)
 
         try:
