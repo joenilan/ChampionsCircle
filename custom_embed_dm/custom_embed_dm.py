@@ -83,6 +83,7 @@ class CustomEmbedDM(commands.Cog):
                 await ctx.send("The attached file is not a supported image format.")
         
         # Process the remaining parts
+        additional_message = ""
         for part in parts[2:]:
             if part.upper() == 'IMAGE':
                 if image_url:
@@ -92,7 +93,11 @@ class CustomEmbedDM(commands.Cog):
             elif part.startswith('http') and not image_url:
                 embed.set_image(url=part)
             else:
-                embed.add_field(name="Additional Message", value=part, inline=False)
+                additional_message += part + "\n"
+        
+        # Add the additional message after processing all parts
+        if additional_message:
+            embed.add_field(name="Additional Message", value=additional_message.strip(), inline=False)
 
         try:
             await user.send(embed=embed)
