@@ -49,25 +49,24 @@ class CustomEmbedDM(commands.Cog):
     @commands.guild_only()
     async def sendembed(self, ctx, user: discord.Member, *, content: str):
         """Send a customized embed to a user via DM.
-        Format: Title | Description | Image URL | Message
-        Use 'default' for any field to use the configured value.
-        Attach an image to override the Image URL field."""
+        Format: Title | Description | [Custom message] | [before/after] | [IMAGE]
+        Use 'default' for title or description to use the configured value.
+        Place IMAGE where you want the image to appear in the embed.
+        Attach an image or use a URL in place of IMAGE."""
         guild_config = self.config.guild(ctx.guild)
         
         # Split the content into parts
-        parts = [part.strip() for part in content.split('|', 3)]
-        while len(parts) < 4:
-            parts.append('default')
+        parts = [part.strip() for part in content.split('|', 4)]
+        while len(parts) < 5:
+            parts.append('')
         
-        title, description, image_url, message = parts
+        title, description, message, position, image_placeholder = parts
         
         # Use configured values for 'default' fields
         if title == 'default':
             title = await guild_config.embed_title()
         if description == 'default':
             description = await guild_config.embed_description()
-        if image_url == 'default':
-            image_url = await guild_config.embed_image_url()
         
         embed = discord.Embed(
             title=title,
@@ -75,21 +74,24 @@ class CustomEmbedDM(commands.Cog):
             color=await guild_config.embed_color()
         )
         
-        # Handle image
+        # Prepare image URL
+        image_url = None
         if ctx.message.attachments:
             attachment = ctx.message.attachments[0]
             if attachment.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
-                embed.set_image(url=attachment.url)
+                image_url = attachment.url
             else:
-                await ctx.send("The attached file is not a supported image format. Using the provided or configured image URL instead.")
+                await ctx.send("The attached file is not a supported image format.")
+        elif image_placeholder.startswith('http'):
+            image_url = image_placeholder
+        
+        # Add elements to the embed in the specified order
+        for part in parts[2:]:  # Start from the third part (message)
+            if part.upper() == 'IMAGE':
                 if image_url:
                     embed.set_image(url=image_url)
-        elif image_url and image_url != 'default':
-            embed.set_image(url=image_url)
-        
-        # Add message field if provided
-        if message and message != 'default':
-            embed.add_field(name="Additional Message", value=message, inline=False)
+            elif part and part not in ['before', 'after']:
+                embed.add_field(name="Additional Message", value=part, inline=False)
 
         try:
             await user.send(embed=embed)
